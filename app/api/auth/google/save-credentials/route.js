@@ -42,11 +42,11 @@ export async function POST(request) {
     fs.writeFileSync(envPath, content, "utf-8");
 
     // Also update runtime process.env
-    process.env.GOOGLE_CLIENT_ID = clientId.trim();
-    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID = clientId.trim();
-    if (clientSecret && clientSecret.trim()) {
-      process.env.GOOGLE_CLIENT_SECRET = clientSecret.trim();
-    }
+    Object.assign(process.env, {
+      GOOGLE_CLIENT_ID: clientId.trim(),
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: clientId.trim(),
+      ...(clientSecret && clientSecret.trim() ? { GOOGLE_CLIENT_SECRET: clientSecret.trim() } : {})
+    });
 
     return NextResponse.json({ ok: true, message: "Google OAuth credentials saved successfully!" });
   } catch (error) {
