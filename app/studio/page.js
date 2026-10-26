@@ -375,7 +375,7 @@ export default function StudioApp() {
         cost={pendingAction?.cost || 1}
         currentBalance={user?.credits_balance ?? 100}
         durationSec={pendingAction?.durationSec}
-        actionTitle={pendingAction?.isRetranscribe ? "Re-transcribe Video" : "Generate Telugu Captions"}
+        actionTitle={pendingAction?.isRetranscribe ? "Re-transcribe Video" : "Generate ManaCaptions"}
         description="Speech recognition & synchronized word-level karaoke timestamps."
       />
 

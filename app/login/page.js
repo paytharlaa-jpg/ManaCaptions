@@ -170,10 +170,10 @@ export default function LoginPage() {
       <header className="h-16 px-4 sm:px-8 flex items-center justify-between z-10 w-full max-w-6xl mx-auto">
         <Link href="/" className="flex items-center gap-2.5 group">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-600 via-orange-500 to-rose-500 flex items-center justify-center shadow-md shadow-orange-500/20 text-white font-black text-xs group-hover:scale-105 transition-transform">
-            TC
+            MC
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="font-bold text-white text-base tracking-tight">Telugu Captions</span>
+            <span className="font-bold text-white text-base tracking-tight">ManaCaptions</span>
             <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 border border-orange-500/25 font-bold">
               Studio
             </span>
@@ -197,10 +197,10 @@ export default function LoginPage() {
           {/* Card Header */}
           <div className="text-center space-y-2">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-600 via-orange-500 to-rose-500 flex items-center justify-center shadow-lg shadow-orange-500/25 text-white font-black text-sm mx-auto mb-3">
-              TC
+              MC
             </div>
             <h1 className="text-2xl font-black text-white tracking-tight">
-              {isSignUp ? "Create Creator Account" : "Sign in to Telugu Captions"}
+              {isSignUp ? "Create Creator Account" : "Sign in to ManaCaptions"}
             </h1>
             <p className="text-xs text-neutral-400">
               {isSignUp
@@ -388,7 +388,7 @@ export default function LoginPage() {
                 />
               </svg>
               <h2 className="text-lg font-bold text-neutral-900 tracking-tight">Choose an account</h2>
-              <p className="text-xs text-neutral-500">to continue to Telugu Captions Studio</p>
+              <p className="text-xs text-neutral-500">to continue to ManaCaptions Studio</p>
             </div>
 
             {/* Account List */}
@@ -527,7 +527,7 @@ export default function LoginPage() {
 
             {/* Google Privacy Disclaimer */}
             <p className="text-[10px] text-neutral-400 text-center leading-relaxed pt-2">
-              To continue, Google will share your name, email address, language preference, and profile picture with Telugu Captions Studio.
+              To continue, Google will share your name, email address, language preference, and profile picture with ManaCaptions Studio.
             </p>
           </div>
         </div>
@@ -535,7 +535,7 @@ export default function LoginPage() {
 
       {/* Footer */}
       <footer className="py-4 text-center text-[11px] text-neutral-500 border-t border-neutral-900 z-10 w-full">
-        Telugu Captions Studio · Built for Telugu Creators · Hyderabad, Telangana
+        ManaCaptions Studio · Built for Telugu Creators · Hyderabad, Telangana
       </footer>
     </div>
   );

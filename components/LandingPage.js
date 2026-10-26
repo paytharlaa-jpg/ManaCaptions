@@ -65,7 +65,7 @@ export default function LandingPage({
       <header className="navbar">
         <div className="container nav-container">
           <a className="logo" href="/">
-            <img src="/logo.png" alt="Caplio" className="nav-logo-img" />
+            <img src="/logo.png" alt="ManaCaptions" className="nav-logo-img" />
           </a>
           <nav className="nav-links">
             <a href="#upload">Product</a>
@@ -603,7 +603,7 @@ export default function LandingPage({
                 <path d="M13 6l6 6-6 6" />
               </svg>
             </button>
-            <div className="lp-cta-points" aria-label="Caplio benefits">
+            <div className="lp-cta-points" aria-label="ManaCaptions benefits">
               <span>Telugu + Romanized</span>
               <span>Style presets</span>
               <span>Burned MP4 export</span>
@@ -618,7 +618,7 @@ export default function LandingPage({
           <div className="lp-footer-grid">
             <div className="lp-footer-brand">
               <a className="logo" href="/">
-                <img src="/logo.png" alt="Caplio" className="nav-logo-img" />
+                <img src="/logo.png" alt="ManaCaptions" className="nav-logo-img" />
               </a>
               <p>AI captions for Telugu creators.</p>
             </div>
@@ -635,7 +635,7 @@ export default function LandingPage({
             </div>
             <div className="lp-footer-col">
               <span className="lp-mono-tag">Contact</span>
-              <a href="mailto:hello@telugucaptions.ai">hello@telugucaptions.ai</a>
+              <a href="mailto:hello@manacaptions.com">hello@manacaptions.com</a>
               <button type="button" onClick={onOpenStudio} className="text-left cursor-pointer hover:underline">
                 Open Studio
               </button>
@@ -643,7 +643,7 @@ export default function LandingPage({
           </div>
 
           <div className="lp-footer-bottom">
-            <span>© 2026 Telugu Captions</span>
+            <span>© 2026 ManaCaptions</span>
             <span className="lp-city-mark lp-city-mark--default">
               <span className="lp-city-mark-icon" aria-hidden="true">
                 <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">

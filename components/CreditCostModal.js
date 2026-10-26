@@ -10,7 +10,7 @@ export default function CreditCostModal({
   onConfirm,
   cost = 1,
   currentBalance = 100,
-  actionTitle = "Generate Telugu Captions",
+  actionTitle = "Generate ManaCaptions",
   description = "Audio speech recognition & word-level karaoke boundary synchronization.",
   durationSec = null,
   isProcessing = false

@@ -59,10 +59,10 @@ export default function DashboardPage() {
         <div className="flex items-center gap-4">
           <Link href="/" className="flex items-center gap-2.5 group">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-600 via-orange-500 to-rose-500 flex items-center justify-center shadow-md shadow-orange-500/20 text-white font-black text-xs group-hover:scale-105 transition-transform">
-              TC
+              MC
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-white text-base tracking-tight">Telugu Captions</span>
+              <span className="font-bold text-white text-base tracking-tight">ManaCaptions</span>
               <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 border border-orange-500/25 font-bold">
                 Dashboard
               </span>
@@ -179,7 +179,7 @@ export default function DashboardPage() {
                 <span>Namaskaram, {user?.name?.split(" ")[0] || "Creator"} 👋</span>
               </div>
               <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
-                Your Telugu Captions Studio
+                Your ManaCaptions Studio
               </h1>
               <p className="text-neutral-400 text-xs sm:text-sm max-w-xl">
                 Create viral dual-script Telugu subtitles, sync song lyrics with Google Gemini 2.5 Flash, and export ready-to-post 9:16 reels.
@@ -427,7 +427,7 @@ export default function DashboardPage() {
 
       {/* Footer */}
       <footer className="h-12 border-t border-neutral-900 px-6 sm:px-12 flex items-center justify-between text-[11px] text-neutral-500">
-        <div>Telugu Captions Studio · Creator Dashboard</div>
+        <div>ManaCaptions Studio · Creator Dashboard</div>
         <div className="flex items-center gap-3">
           <Link href="/" className="hover:text-orange-400">Studio</Link>
           <span>•</span>

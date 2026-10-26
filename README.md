@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# ManaCaptions Studio 🎬✨
 
-## Getting Started
+> **AI Captions & Subtitles for Telugu Creators, Reels & Shorts**
 
-First, run the development server:
+ManaCaptions Studio is a high-performance web platform designed specifically for Telugu content creators. It automates speech recognition, dual-script captioning (Native Telugu లిపి & Romanized Telugu), viral style animation presets (Karaoke, Negative, Bold, Minimal), Instagram safe-zone checking, and burned-in MP4 export.
+
+---
+
+## 🚀 Key Features
+
+- **Dual-Script Telugu Subtitles**: Generate both Native Telugu script (తెలుగు లిపి) and Romanized phonetic Telugu (*"Meeru ee reel ni chusara"*) simultaneously.
+- **Multimodal AI Transcription**: Integrated with Google Gemini 2.5 Flash, Groq Whisper, and Indic ASR engines.
+- **Viral Caption Presets**: 
+  - 🎤 **Karaoke Active Word Fill**: Word-by-word synced glowing highlights.
+  - ⚡ **Negative Impact**: Dynamic inverted background boxes.
+  - 💥 **Bold Creator Pop**: Chunky text with drop shadow for short-form retention.
+  - 🎨 **Minimal / Editorial**: Clean typography for interviews and podcasts.
+- **Social Safe-Zone Overlay**: Interactive 9:16 Instagram Reels / YouTube Shorts safe zone overlay so captions are never blocked by UI elements.
+- **Burned-in MP4 & Subtitle Export**: Client-side canvas/video pipeline for burned-in video rendering plus instant SRT / VTT subtitle downloads.
+- **Creator Dashboard & Auth**: Google OAuth 2.0 login and credit-based processing workflow.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Framework**: [Next.js](https://nextjs.org/) (App Router, Turbopack)
+- **UI & Icons**: [Tailwind CSS](https://tailwindcss.com/), [Lucide React](https://lucide.dev/)
+- **Typography**: NTR (Telugu), Anton, Montserrat, Inter, Outfit
+- **AI / Speech**: Google Gemini API, Groq Whisper
+
+---
+
+## 🏁 Getting Started
+
+### 1. Clone & Install
+
+```bash
+git clone https://github.com/paytharlaa-jpg/ManaCaptions.git
+cd ManaCaptions
+npm install
+```
+
+### 2. Configure Environment
+
+Copy the example environment configuration:
+
+```bash
+cp .env.example .env.local
+```
+
+Add your API keys in `.env.local`:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+# Optional alternatives:
+GROQ_API_KEY=your_groq_api_key_here
+SARVAM_API_KEY=your_sarvam_key_here
+```
+
+### 3. Run Locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to view the studio.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 📄 License
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT © 2026 ManaCaptions

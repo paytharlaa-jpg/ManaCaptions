@@ -27,10 +27,10 @@ export default function Navbar({
           title="Return to home / upload"
         >
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-600 via-orange-500 to-rose-500 flex items-center justify-center shadow-md shadow-orange-500/20 text-white font-black text-xs tracking-tighter group-hover:scale-105 transition-transform">
-            TC
+            MC
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="font-bold text-white text-sm sm:text-base tracking-tight">Telugu Captions</span>
+            <span className="font-bold text-white text-sm sm:text-base tracking-tight">ManaCaptions</span>
             <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 border border-orange-500/25 font-bold">
               Studio
             </span>

@@ -2,10 +2,10 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/authContext";
 
 export const metadata = {
-  title: "Telugu Captions Studio — AI Captions for Telugu Reels & Shorts",
-  description: "Upload a Short, generate accurate Telugu & Romanized captions, customize viral styles (Karaoke, Bold, Negative), check Instagram safe zones, and export post-ready video.",
-  keywords: "Telugu captions, Telugu subtitles, Reels captions, Telugu AI, video subtitle editor, Telugu transcribe, Instagram safe zone",
-  authors: [{ name: "Telugu Captions AI" }],
+  title: "ManaCaptions Studio — AI Captions for Telugu Reels & Shorts",
+  description: "Upload a Short, generate accurate Telugu & Romanized captions, customize viral styles (Karaoke, Bold, Negative), check Instagram safe zones, and export post-ready video with ManaCaptions Studio.",
+  keywords: "ManaCaptions, Telugu captions, Telugu subtitles, Reels captions, Telugu AI, video subtitle editor, Telugu transcribe, Instagram safe zone",
+  authors: [{ name: "ManaCaptions AI" }],
 };
 
 export const viewport = {

@@ -94,7 +94,7 @@ export default function UploadDropzone({
           )}
         </div>
         <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
-          Create <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-300 to-rose-400">Telugu Captions</span> in Seconds
+          Create <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-300 to-rose-400">ManaCaptions</span> in Seconds
         </h1>
         <p className="text-neutral-400 text-sm sm:text-base max-w-lg mx-auto">
           Upload a Short or Reel, generate accurate Telugu & Romanized captions, customize viral styles, and export your post-ready video.
