@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Sparkles, Video, Moon, Sun, Type, Wand2, Film, LayoutDashboard, LogIn, LogOut, ChevronDown, Zap } from "lucide-react";
+import { Sparkles, Video, Moon, Sun, Type, Wand2, Film, LayoutDashboard, LogIn, LogOut, ChevronDown, Zap, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/lib/authContext";
 
 export default function Navbar({
@@ -18,20 +18,23 @@ export default function Navbar({
   const [showMenu, setShowMenu] = useState(false);
 
   return (
-    <header className="h-14 border-b border-neutral-800 bg-neutral-950 px-3 sm:px-6 flex items-center justify-between shrink-0 select-none z-50">
+    <header className="h-16 border-b border-[#20309A]/30 bg-[#060919]/90 backdrop-blur-xl px-3 sm:px-6 flex items-center justify-between shrink-0 select-none z-50 shadow-[0_4px_25px_rgba(0,0,0,0.6)]">
       {/* Brand Identity */}
       <div className="flex items-center gap-3">
         <div
-          className="flex items-center gap-2 cursor-pointer group"
+          className="flex items-center gap-2.5 cursor-pointer group"
           onClick={onResetVideo}
-          title="Return to home / upload"
+          title="Return to ManaCaption home"
         >
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-600 via-orange-500 to-rose-500 flex items-center justify-center shadow-md shadow-orange-500/20 text-white font-black text-xs tracking-tighter group-hover:scale-105 transition-transform">
+          {/* Logo container ready for custom logo attachment */}
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#20309A] via-[#384DE8] to-[#BB232B] flex items-center justify-center shadow-[0_0_15px_rgba(32,48,154,0.5)] border border-[#F8F3F0]/20 text-[#F8F3F0] font-black text-xs tracking-tighter group-hover:scale-105 transition-all">
             MC
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-white text-sm sm:text-base tracking-tight">ManaCaptions</span>
-            <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 border border-orange-500/25 font-bold">
+          <div className="flex items-center gap-2">
+            <span className="font-extrabold text-[#F8F3F0] text-base sm:text-lg tracking-tight group-hover:text-white transition-colors">
+              ManaCaption
+            </span>
+            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-[#BB232B]/20 text-[#F8F3F0] border border-[#BB232B]/40 font-bold shadow-[0_0_10px_rgba(187,35,43,0.3)]">
               Studio
             </span>
           </div>
@@ -40,23 +43,33 @@ export default function Navbar({
         {/* Dashboard Shortcut */}
         <Link
           href="/"
-          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 text-xs font-semibold transition-colors"
+          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0D1333] hover:bg-[#141C48] text-[#F8F3F0]/80 hover:text-[#F8F3F0] border border-[#20309A]/40 text-xs font-semibold transition-all hover:border-[#384DE8]/60 shadow-sm"
           title="Open Creator Dashboard"
         >
-          <LayoutDashboard className="w-3.5 h-3.5 text-orange-400" />
+          <LayoutDashboard className="w-3.5 h-3.5 text-[#384DE8]" />
           <span>Dashboard</span>
+        </Link>
+
+        {/* Pricing Shortcut */}
+        <Link
+          href="/pricing"
+          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0D1333] hover:bg-[#141C48] text-[#F8F3F0]/80 hover:text-[#F8F3F0] border border-[#20309A]/40 text-xs font-semibold transition-all hover:border-[#BB232B]/60 shadow-sm"
+          title="Buy Credits & Pricing"
+        >
+          <Zap className="w-3.5 h-3.5 text-[#BB232B] fill-[#BB232B]" />
+          <span>Pricing</span>
         </Link>
       </div>
 
       {/* Center Navigation Tabs (Direct Studio Tabs) */}
       {hasVideo && (
-        <div className="flex items-center bg-neutral-900 p-1 rounded-xl border border-neutral-800 text-xs">
+        <div className="flex items-center bg-[#090D24] p-1 rounded-2xl border border-[#20309A]/40 text-xs shadow-inner">
           <button
             onClick={() => setActiveTab("transcript")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               activeTab === "transcript"
-                ? "bg-orange-500 text-white shadow-sm"
-                : "text-neutral-400 hover:text-white"
+                ? "bg-gradient-to-r from-[#20309A] to-[#BB232B] text-[#F8F3F0] shadow-[0_0_15px_rgba(32,48,154,0.5)] font-bold"
+                : "text-[#F8F3F0]/60 hover:text-[#F8F3F0] hover:bg-[#111840]"
             }`}
           >
             <Type className="w-3.5 h-3.5" />
@@ -64,10 +77,10 @@ export default function Navbar({
           </button>
           <button
             onClick={() => setActiveTab("style")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               activeTab === "style"
-                ? "bg-orange-500 text-white shadow-sm"
-                : "text-neutral-400 hover:text-white"
+                ? "bg-gradient-to-r from-[#20309A] to-[#BB232B] text-[#F8F3F0] shadow-[0_0_15px_rgba(32,48,154,0.5)] font-bold"
+                : "text-[#F8F3F0]/60 hover:text-[#F8F3F0] hover:bg-[#111840]"
             }`}
           >
             <Wand2 className="w-3.5 h-3.5" />
@@ -75,10 +88,10 @@ export default function Navbar({
           </button>
           <button
             onClick={() => setActiveTab("export")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               activeTab === "export"
-                ? "bg-orange-500 text-white shadow-sm"
-                : "text-neutral-400 hover:text-white"
+                ? "bg-gradient-to-r from-[#20309A] to-[#BB232B] text-[#F8F3F0] shadow-[0_0_15px_rgba(32,48,154,0.5)] font-bold"
+                : "text-[#F8F3F0]/60 hover:text-[#F8F3F0] hover:bg-[#111840]"
             }`}
           >
             <Film className="w-3.5 h-3.5" />
@@ -88,13 +101,13 @@ export default function Navbar({
       )}
 
       {/* Right Action Buttons */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         <button
           onClick={onLoadDemo}
           title="Load pre-configured demo reel with Telugu captions"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-semibold transition-all cursor-pointer"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#20309A]/20 hover:bg-[#20309A]/35 text-[#F8F3F0] border border-[#20309A]/50 text-xs font-semibold transition-all cursor-pointer shadow-[0_0_15px_rgba(32,48,154,0.2)] hover:scale-105"
         >
-          <Sparkles className="w-3.5 h-3.5" />
+          <Sparkles className="w-3.5 h-3.5 text-[#384DE8]" />
           <span>Demo Reel</span>
         </button>
 
@@ -102,7 +115,7 @@ export default function Navbar({
           <button
             onClick={onResetVideo}
             title="Upload new video"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 text-xs font-medium transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0D1333] hover:bg-[#141C48] text-[#F8F3F0]/80 hover:text-white border border-[#20309A]/40 text-xs font-medium transition-all cursor-pointer"
           >
             <Video className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">New Video</span>
@@ -111,72 +124,90 @@ export default function Navbar({
 
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition-all cursor-pointer"
+          className="p-2 rounded-xl bg-[#0D1333] hover:bg-[#141C48] text-[#F8F3F0]/70 hover:text-[#F8F3F0] border border-[#20309A]/40 transition-all cursor-pointer"
           title="Toggle color theme"
           aria-label="Toggle theme"
         >
-          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          {theme === "dark" ? <Sun className="w-4 h-4 text-[#384DE8]" /> : <Moon className="w-4 h-4 text-[#384DE8]" />}
         </button>
 
         {/* User Account / Profile Button */}
         {user ? (
           <div className="flex items-center gap-2">
             <Link
-              href="/dashboard"
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-orange-500/10 border border-orange-500/25 text-orange-400 text-xs font-bold hover:bg-orange-500/20 transition-colors shadow-sm"
-              title="Your Credit Balance"
+              href="/pricing"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0D1333] border border-[#BB232B]/40 hover:border-[#BB232B] text-[#F8F3F0] text-xs font-bold transition-all shadow-[0_0_15px_rgba(187,35,43,0.25)] hover:scale-105"
+              title="Top Up Credits"
             >
-              <Zap className="w-3.5 h-3.5 fill-orange-400" />
-              <span>{user.credits_balance ?? 100}</span>
+              <Zap className="w-3.5 h-3.5 text-[#BB232B] fill-[#BB232B]" />
+              <span>{user.credits_balance ?? 10} Credits</span>
             </Link>
 
             <div className="relative">
               <button
                 onClick={() => setShowMenu(!showMenu)}
-                className="flex items-center gap-1.5 p-1 rounded-lg hover:bg-neutral-900 border border-transparent hover:border-neutral-800 transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-[#0D1333] border border-transparent hover:border-[#20309A]/40 transition-colors cursor-pointer"
               >
-              <img
-                src={user.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80"}
-                alt={user.name}
-                className="w-7 h-7 rounded-lg object-cover border border-orange-500/40"
-              />
-              <ChevronDown className="w-3 h-3 text-neutral-400" />
-            </button>
+                <img
+                  src={user.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80"}
+                  alt={user.name}
+                  className="w-8 h-8 rounded-xl object-cover border border-[#20309A]/60 shadow-[0_0_10px_rgba(32,48,154,0.4)]"
+                />
+                <ChevronDown className="w-3 h-3 text-[#F8F3F0]/60" />
+              </button>
 
-            {showMenu && (
-              <div className="absolute right-0 mt-2 w-52 rounded-2xl bg-neutral-900 border border-neutral-800 shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                <div className="p-2 border-b border-neutral-800 mb-1">
-                  <p className="text-xs font-bold text-white truncate">{user.name}</p>
-                  <p className="text-[10px] text-neutral-400 truncate">{user.email}</p>
-                  <span className="inline-block mt-1 text-[9px] font-mono px-1.5 py-0.2 rounded bg-orange-500/15 text-orange-400 font-bold border border-orange-500/30">
-                    {user.plan || "Creator Pro"}
-                  </span>
+              {showMenu && (
+                <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#090D26] border border-[#20309A]/40 shadow-[0_15px_40px_rgba(0,0,0,0.8),0_0_25px_rgba(32,48,154,0.3)] p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150 backdrop-blur-xl">
+                  <div className="p-2.5 border-b border-[#20309A]/30 mb-1">
+                    <p className="text-xs font-bold text-[#F8F3F0] truncate">{user.name}</p>
+                    <p className="text-[10px] text-[#F8F3F0]/60 truncate">{user.email}</p>
+                    <span className="inline-block mt-1.5 text-[9px] font-mono px-2 py-0.5 rounded-full bg-[#BB232B]/20 text-[#F8F3F0] font-bold border border-[#BB232B]/40">
+                      {user.plan || "Creator Pro"}
+                    </span>
+                  </div>
+
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setShowMenu(false)}
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-[#F8F3F0]/80 hover:text-white hover:bg-[#101742] transition-colors"
+                  >
+                    <LayoutDashboard className="w-4 h-4 text-[#384DE8]" />
+                    <span>Creator Dashboard</span>
+                  </Link>
+
+                  <Link
+                    href="/pricing"
+                    onClick={() => setShowMenu(false)}
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-[#F8F3F0]/80 hover:text-white hover:bg-[#101742] transition-colors"
+                  >
+                    <Zap className="w-4 h-4 text-[#BB232B] fill-[#BB232B]" />
+                    <span>Buy Credits</span>
+                  </Link>
+
+                  <Link
+                    href="/admin"
+                    onClick={() => setShowMenu(false)}
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-[#F8F3F0]/80 hover:text-white hover:bg-[#101742] transition-colors"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-[#384DE8]" />
+                    <span>Admin Hub</span>
+                  </Link>
+
+                  <button
+                    onClick={() => { logout(); setShowMenu(false); }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-[#E0353E] hover:bg-[#BB232B]/15 transition-colors cursor-pointer text-left mt-1 border-t border-[#20309A]/30 pt-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Sign Out</span>
+                  </button>
                 </div>
-
-                <Link
-                  href="/dashboard"
-                  onClick={() => setShowMenu(false)}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
-                >
-                  <LayoutDashboard className="w-3.5 h-3.5 text-orange-400" />
-                  <span>Creator Dashboard</span>
-                </Link>
-
-                <button
-                  onClick={() => { logout(); setShowMenu(false); }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer text-left mt-1 border-t border-neutral-800 pt-1.5"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Sign Out</span>
-                </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
         ) : (
           <Link
             href="/login"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-all shadow-sm shadow-orange-500/20"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-[#20309A] to-[#BB232B] hover:from-[#2B3EC4] hover:to-[#D42B34] text-[#F8F3F0] text-xs font-bold transition-all shadow-[0_0_15px_rgba(32,48,154,0.4)] hover:scale-105"
           >
             <LogIn className="w-3.5 h-3.5" />
             <span>Sign In</span>

@@ -74,7 +74,7 @@ export async function GET(request) {
       joined: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })
     };
 
-    // Save/sync user in DB with 100 free signup credits
+    // Save/sync user in DB with 10 free signup credits
     try {
       getOrCreateUser(user);
     } catch (dbErr) {

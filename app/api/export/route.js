@@ -1,12 +1,28 @@
 import { NextResponse } from "next/server";
-import { spawn } from "child_process";
+export const dynamic = "force-dynamic";
+import { spawn, spawnSync } from "child_process";
+import ffmpegPath from "ffmpeg-static";
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
 import { getAuthenticatedUser } from "@/lib/authServer";
 import { PRICING_RULES } from "@/config/pricing";
 import { createJob, updateJobStatus, deductCreditsAtomically, refundCreditsAtomically } from "@/lib/db";
+
+function getFfmpegBinary() {
+  const localExe = path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg.exe");
+  if (fsSync.existsSync(localExe)) return localExe;
+
+  const localBin = path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg");
+  if (fsSync.existsSync(localBin)) return localBin;
+
+  if (typeof ffmpegPath === "string" && fsSync.existsSync(ffmpegPath)) return ffmpegPath;
+  if (ffmpegPath?.default && fsSync.existsSync(ffmpegPath.default)) return ffmpegPath.default;
+
+  return "ffmpeg";
+}
 
 // In-memory file cache for processed exports (expires after 15 minutes)
 const exportCache = new Map();
@@ -122,29 +138,62 @@ export async function POST(request) {
         }
 
         const buffer = Buffer.from(await videoFile.arrayBuffer());
+        const subtitlesAss = formData.get("subtitlesAss");
         const tempId = crypto.randomBytes(8).toString("hex");
         const inputExt = videoFile.name?.endsWith(".mp4") ? ".mp4" : ".webm";
-        const inputPath = path.join(os.tmpdir(), `tc_input_${tempId}${inputExt}`);
-        const outputPath = path.join(os.tmpdir(), `tc_output_${tempId}.mp4`);
+        
+        const tmpDir = os.tmpdir();
+        const inputName = `tc_input_${tempId}${inputExt}`;
+        const outputName = `tc_output_${tempId}.mp4`;
+        const subsName = `tc_subs_${tempId}.ass`;
+
+        const inputPath = path.join(tmpDir, inputName);
+        const outputPath = path.join(tmpDir, outputName);
+        const subsPath = path.join(tmpDir, subsName);
 
         await fs.writeFile(inputPath, buffer);
+        if (subtitlesAss) {
+          await fs.writeFile(subsPath, String(subtitlesAss), "utf8");
+        }
 
-        // Execute FFmpeg to create standard H.264 (yuv420p) + AAC (192k) MP4 with faststart
+        // Execute FFmpeg using bundled ffmpeg-static binary
+        const ffmpegBinary = getFfmpegBinary();
+
+        // Probe if input media stream includes audio
+        let hasAudio = false;
+        try {
+          const probe = spawnSync(ffmpegBinary, ["-i", inputPath]);
+          const probeOutput = (probe.stderr ? probe.stderr.toString() : "") + (probe.stdout ? probe.stdout.toString() : "");
+          hasAudio = probeOutput.includes("Audio:");
+        } catch (probeErr) {
+          console.warn("Probe audio note:", probeErr.message);
+        }
+
         await new Promise((resolve, reject) => {
           const ffmpegArgs = [
             "-y",
-            "-i", inputPath,
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-preset", "ultrafast",
-            "-crf", "22",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-movflags", "+faststart",
-            outputPath
+            "-i", inputName
           ];
 
-          const proc = spawn("ffmpeg", ffmpegArgs);
+          // Hardcode/burn high-fidelity styled subtitles directly into video frames
+          if (subtitlesAss) {
+            ffmpegArgs.push("-vf", `ass=${subsName}`);
+          }
+
+          ffmpegArgs.push(
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-preset", "veryfast",
+            "-crf", "18"
+          );
+
+          if (hasAudio) {
+            ffmpegArgs.push("-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2");
+          }
+
+          ffmpegArgs.push("-movflags", "+faststart", outputName);
+
+          const proc = spawn(ffmpegBinary, ffmpegArgs, { cwd: tmpDir });
           let stderr = "";
           proc.stderr.on("data", chunk => {
             stderr += chunk.toString();
@@ -155,7 +204,7 @@ export async function POST(request) {
               resolve();
             } else {
               console.error("FFmpeg transcode error details:", stderr);
-              reject(new Error(`FFmpeg exited with code ${code}`));
+              reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-200)}`));
             }
           });
 
@@ -169,9 +218,15 @@ export async function POST(request) {
         // Clean up temporary files
         await fs.unlink(inputPath).catch(() => {});
         await fs.unlink(outputPath).catch(() => {});
+        if (subtitlesAss) {
+          await fs.unlink(subsPath).catch(() => {});
+        }
 
-        const safeBaseName = String(filename).trim().replace(/[^a-zA-Z0-9_-]/g, "_") || "telugu_reel";
-        const safeFilename = `${safeBaseName}_captioned.mp4`;
+        // Exact naming requested by creator: {current_filename_without_ext}_manacaption.mp4
+        let baseClean = String(filename || "video").trim().replace(/\.[^/.]+$/, "");
+        baseClean = baseClean.replace(/_manacaption$/i, "").replace(/_captioned$/i, "");
+        const safeBaseName = baseClean.replace(/[^a-zA-Z0-9_-]/g, "_") || "video";
+        const safeFilename = `${safeBaseName}_manacaption.mp4`;
 
         const fileId = crypto.randomBytes(12).toString("hex");
         cleanOldExports();

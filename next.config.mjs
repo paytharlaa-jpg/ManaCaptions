@@ -27,10 +27,7 @@ const nextConfig = {
     "localhost:3000",
     "10.50.186.4",
     "10.50.186.4:3000"
-  ],
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  ]
 };
 
 export default nextConfig;

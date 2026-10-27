@@ -11,6 +11,7 @@ import CreditCostModal from "@/components/CreditCostModal";
 import GuestAuthModal from "@/components/GuestAuthModal";
 import { DEFAULT_STYLE } from "@/lib/presets";
 import { SAMPLE_PROJECT } from "@/lib/sampleDemo";
+import { chunkSegmentsToFourFiveWords } from "@/lib/captionPacing";
 import { PRICING_RULES } from "@/config/pricing";
 import { useAuth } from "@/lib/authContext";
 
@@ -68,7 +69,7 @@ export default function StudioApp() {
     setVideoSrc(SAMPLE_PROJECT.videoUrl);
     setVideoFilename(SAMPLE_PROJECT.filename);
     setCurrentFile(null);
-    setSegments(SAMPLE_PROJECT.segments);
+    setSegments(chunkSegmentsToFourFiveWords(SAMPLE_PROJECT.segments));
     setDuration(SAMPLE_PROJECT.durationSec);
     setCurrentTime(0);
     setIsPlaying(false);
@@ -113,11 +114,12 @@ export default function StudioApp() {
 
       const data = await res.json();
       if (data.ok && data.segments && data.segments.length > 0) {
-        setSegments(data.segments);
-        const lastSeg = data.segments[data.segments.length - 1];
-        if (lastSeg) setDuration(lastSeg.end + 1);
+        const paced = chunkSegmentsToFourFiveWords(data.segments);
+        setSegments(paced);
+        const lastSeg = paced[paced.length - 1];
+        setDuration(prev => Math.max(prev || 0, durationSec || 0, lastSeg ? (lastSeg.end + 0.5) : 0));
 
-        const hasTelugu = data.segments.some(s => /[\u0C00-\u0C7F]/.test(s.text));
+        const hasTelugu = paced.some(s => /[\u0C00-\u0C7F]/.test(s.text));
         setScriptMode(hasTelugu ? "both" : "romanized");
 
         if (data.creditsRemaining !== undefined && updateCreditsBalance) {
@@ -130,13 +132,10 @@ export default function StudioApp() {
         } else if (data.error) {
           alert(data.error);
         }
-        setSegments(SAMPLE_PROJECT.segments);
-        setScriptMode("telugu");
       }
     } catch (err) {
-      console.warn("Transcription API error, loading standard segments:", err);
-      setSegments(SAMPLE_PROJECT.segments);
-      setScriptMode("telugu");
+      console.warn("Transcription API error:", err);
+      alert("Transcription error: " + (err.message || "Failed to transcribe"));
     } finally {
       setIsTranscribing(false);
       setActiveTab("transcript");
@@ -257,11 +256,12 @@ export default function StudioApp() {
 
       const data = await res.json();
       if (data.ok && data.segments && data.segments.length > 0) {
-        setSegments(data.segments);
-        const lastSeg = data.segments[data.segments.length - 1];
-        if (lastSeg) setDuration(lastSeg.end + 1);
+        const paced = chunkSegmentsToFourFiveWords(data.segments);
+        setSegments(paced);
+        const lastSeg = paced[paced.length - 1];
+        setDuration(prev => Math.max(prev || 0, durationSec || duration || 0, lastSeg ? (lastSeg.end + 0.5) : 0));
 
-        const hasTelugu = data.segments.some(s => /[\u0C00-\u0C7F]/.test(s.text));
+        const hasTelugu = paced.some(s => /[\u0C00-\u0C7F]/.test(s.text));
         setScriptMode(hasTelugu ? "both" : "romanized");
 
         if (data.creditsRemaining !== undefined && updateCreditsBalance) {
@@ -279,7 +279,11 @@ export default function StudioApp() {
   };
 
   return (
-    <div className={`h-screen w-screen flex flex-col overflow-hidden ${theme === "dark" ? "bg-neutral-950 text-white" : "bg-neutral-100 text-neutral-900"}`}>
+    <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#060919] text-[#F8F3F0] relative selection:bg-[#20309A] selection:text-[#F8F3F0]">
+      {/* Background Ambient Futuristic Glow Orbs */}
+      <div className="fixed top-0 left-1/4 w-96 h-96 bg-[#20309A]/15 rounded-full blur-[120px] pointer-events-none -z-10" />
+      <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-[#BB232B]/10 rounded-full blur-[140px] pointer-events-none -z-10" />
+
       {/* Sleek Fixed Navbar - zero wasted space */}
       <Navbar
         hasVideo={!!videoSrc}
@@ -327,7 +331,7 @@ export default function StudioApp() {
               />
             </div>
 
-            {/* Right 7 Columns: Studio Workstation (Transcript / Styles / Export) */}
+            {/* Right 7 Columns: Studio Workstation (Transcript / Styles / B-Roll / Export) */}
             <div className="lg:col-span-7 xl:col-span-7 h-full min-h-0 flex flex-col overflow-hidden">
               {activeTab === "transcript" && (
                 <TranscriptEditor
@@ -358,6 +362,7 @@ export default function StudioApp() {
                   segments={segments}
                   scriptMode={scriptMode}
                   videoSrc={videoSrc}
+                  currentFile={currentFile}
                   styleConfig={styleConfig}
                   filename={videoFilename}
                 />
@@ -373,7 +378,7 @@ export default function StudioApp() {
         onClose={() => { setCostModalOpen(false); setPendingAction(null); }}
         onConfirm={pendingAction?.isRetranscribe ? confirmRetranscribe : confirmTranscription}
         cost={pendingAction?.cost || 1}
-        currentBalance={user?.credits_balance ?? 100}
+        currentBalance={user?.credits_balance ?? 10}
         durationSec={pendingAction?.durationSec}
         actionTitle={pendingAction?.isRetranscribe ? "Re-transcribe Video" : "Generate ManaCaptions"}
         description="Speech recognition & synchronized word-level karaoke timestamps."

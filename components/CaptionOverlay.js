@@ -110,6 +110,7 @@ export default function CaptionOverlay({
     textAlign: styleConfig.align || "center",
     letterSpacing: `${styleConfig.letterSpacingEm || 0}em`,
     lineHeight: styleConfig.lineHeight || 1.1,
+    whiteSpace: "nowrap"
   };
 
   // Outline style helper
@@ -151,7 +152,7 @@ export default function CaptionOverlay({
       style={containerStyle}
     >
       <div
-        className={`inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 transition-all duration-75 ${
+        className={`inline-flex flex-nowrap whitespace-nowrap items-center justify-center gap-x-2 transition-all duration-75 ${
           styleConfig.animation === "pop" ? "animate-caption-pop" : ""
         } ${styleConfig.animation === "fade" ? "animate-caption-fade" : ""} ${
           isNegative ? "bg-white text-black px-4 py-2 rounded-lg mix-blend-screen" : ""

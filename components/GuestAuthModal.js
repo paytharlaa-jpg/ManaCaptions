@@ -27,12 +27,17 @@ export default function GuestAuthModal({
     loginWithGoogleAccount,
     loginDemoAccount,
     loginWithEmail,
+    sendOtp,
+    verifyOtp,
     googleConfigured,
     claimGuestProjects
   } = useAuth();
 
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [devOtp, setDevOtp] = useState(null);
   const [error, setError] = useState(null);
   const [showEmailInput, setShowEmailInput] = useState(false);
 
@@ -40,140 +45,155 @@ export default function GuestAuthModal({
 
   const actionTitle =
     actionType === "translate"
-      ? "Sign in to translate your captions and get 100 free credits"
-      : "Sign in to download your captions and get 100 free credits";
+      ? "Sign in to translate your captions and get 10 free credits"
+      : "Sign in to download your captions and get 10 free credits";
 
   const actionDesc =
     actionType === "translate"
       ? "Unlock fast dual-script Telugu AI translation and auto-save this project to your account."
       : "Unlock high-definition MP4 downloads, SRT subtitles, and claim this project to your account.";
 
-  // Post-login handler: claim projects & execute continuation
   const handlePostLogin = async (user) => {
     try {
       if (claimGuestProjects) {
         await claimGuestProjects();
       }
+      if (onSuccess) {
+        onSuccess(user);
+      }
+      onClose();
     } catch (e) {
-      console.warn("Guest claim notice:", e);
-    }
-    onClose();
-    if (typeof onSuccess === "function") {
-      onSuccess(user);
+      console.warn("Post login sync notice:", e);
+      onClose();
     }
   };
 
-  // 1. Continue with Google
   const handleGoogleSignIn = async () => {
     setError(null);
     setLoading(true);
     try {
       if (googleConfigured) {
-        // Save pending action to sessionStorage so Studio resumes upon redirect
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem("tc_pending_guest_action", actionType);
-          document.cookie = `tc_return_to=/studio?resumeAction=${encodeURIComponent(actionType)}; path=/; max-age=600; SameSite=Lax`;
-        }
-        await loginWithGoogle();
-      } else {
-        // Use instant Google Creator profile if OAuth keys are not configured yet
-        const googleUser = {
-          id: "google_user_creator",
-          name: "Telugu Reels Creator",
-          email: "telugu.creator.studio@gmail.com",
-          avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80",
-          provider: "google"
-        };
-        const synced = await loginWithGoogleAccount(googleUser);
-        await handlePostLogin(synced);
+        sessionStorage.setItem("tc_pending_guest_action", actionType);
+        window.location.href = "/api/auth/google/login";
+        return;
       }
+      const demoAccount = {
+        id: "google_guest_claimed",
+        name: "Google Creator",
+        email: "hello.trygaruda@gmail.com",
+        avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80"
+      };
+      const user = await loginWithGoogleAccount(demoAccount);
+      await handlePostLogin(user);
     } catch (err) {
-      setError(err.message || "Google sign-in failed. Please try again.");
+      setError(err.message || "Google sign in failed");
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. Demo Creator Account (Instant 1-click test)
   const handleDemoSignIn = async () => {
     setError(null);
     setLoading(true);
     try {
-      const demo = await loginDemoAccount();
-      await handlePostLogin(demo);
+      const user = await loginDemoAccount();
+      await handlePostLogin(user);
     } catch (err) {
-      setError(err.message || "Sign-in failed");
+      setError(err.message || "Quick sign in failed");
     } finally {
       setLoading(false);
     }
   };
 
-  // 3. Email Sign-In
-  const handleEmailSignIn = async (e) => {
+  const handleSendEmailOtp = async (e) => {
     e.preventDefault();
-    if (!email || !email.includes("@")) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
       setError("Please enter a valid email address");
       return;
     }
     setError(null);
     setLoading(true);
     try {
-      const user = await loginWithEmail(email, "guest_trial_pass");
+      const data = await sendOtp(cleanEmail);
+      setOtpSent(true);
+      if (data?.devMode && data?.devOtp) {
+        setDevOtp(data.devOtp);
+      }
+    } catch (err) {
+      setError(err.message || "Failed to send code");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async (e) => {
+    e.preventDefault();
+    const cleanOtp = otp.trim();
+    if (!cleanOtp || cleanOtp.length < 6) {
+      setError("Please enter the 6-digit code");
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const user = await verifyOtp(email.trim(), cleanOtp);
       await handlePostLogin(user);
     } catch (err) {
-      setError(err.message || "Email login failed");
+      setError(err.message || "Invalid verification code");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md rounded-3xl bg-neutral-900 border border-neutral-800 p-6 sm:p-7 shadow-2xl overflow-hidden text-neutral-100">
-        {/* Subtle orange accent glow */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md rounded-3xl bg-[#0C1230] border border-[#20309A]/40 p-6 sm:p-7 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(32,48,154,0.2)] overflow-hidden text-[#F8F3F0]">
+        {/* Subtle accent glows */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-[#20309A]/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#BB232B]/15 rounded-full blur-3xl pointer-events-none" />
 
         {/* Close Button */}
         <button
           onClick={onClose}
           disabled={loading}
-          className="absolute top-4 right-4 p-2 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800/80 transition-all cursor-pointer"
+          className="absolute top-4 right-4 p-2 rounded-xl text-[#F8F3F0]/60 hover:text-white hover:bg-[#141C48] transition-all cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
 
         {/* Header Badge */}
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 text-xs font-bold mb-3">
-          <Zap className="w-3.5 h-3.5 fill-orange-400" />
-          <span>100 Free Credits Included at Signup</span>
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#BB232B]/20 border border-[#BB232B]/40 text-[#F8F3F0] text-xs font-bold mb-3 shadow-[0_0_10px_rgba(187,35,43,0.25)]">
+          <Zap className="w-3.5 h-3.5 fill-[#BB232B] text-[#BB232B]" />
+          <span>10 Free Credits Included at Signup</span>
         </div>
 
         {/* Title & Description */}
         <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-snug">
           {actionTitle}
         </h2>
-        <p className="text-xs sm:text-sm text-neutral-400 mt-2 leading-relaxed">
+        <p className="text-xs sm:text-sm text-[#F8F3F0]/70 mt-2 leading-relaxed">
           {actionDesc}
         </p>
 
         {/* Perks list */}
-        <div className="my-5 p-3.5 rounded-2xl bg-neutral-950/70 border border-neutral-800/80 space-y-2">
-          <div className="flex items-center gap-2 text-xs text-neutral-300">
+        <div className="my-5 p-3.5 rounded-2xl bg-[#060919] border border-[#20309A]/30 space-y-2">
+          <div className="flex items-center gap-2 text-xs text-[#F8F3F0]/85">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             <span>Automatic transfer of your current captions and video</span>
           </div>
-          <div className="flex items-center gap-2 text-xs text-neutral-300">
+          <div className="flex items-center gap-2 text-xs text-[#F8F3F0]/85">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span>100 bonus credits added immediately (never expires)</span>
+            <span>10 bonus credits added immediately (never expires)</span>
           </div>
-          <div className="flex items-center gap-2 text-xs text-neutral-300">
+          <div className="flex items-center gap-2 text-xs text-[#F8F3F0]/85">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span>Universal MP4 video export & SRT subtitles download</span>
+            <span>Universal MP4 video export &amp; SRT subtitles download</span>
           </div>
         </div>
 
         {error && (
-          <div className="mb-4 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-medium">
+          <div className="mb-4 p-2.5 rounded-xl bg-[#BB232B]/15 border border-[#BB232B]/40 text-[#F8F3F0] text-xs font-medium">
             {error}
           </div>
         )}
@@ -211,41 +231,85 @@ export default function GuestAuthModal({
             <span>Continue with Google</span>
           </button>
 
-          {/* Quick Demo Login Option */}
+          {/* Quick 1-Click Creator Sign In Option */}
           <button
             onClick={handleDemoSignIn}
             disabled={loading}
-            className="w-full py-2.5 px-3 rounded-xl bg-orange-500/15 hover:bg-orange-500/25 border border-orange-500/30 text-orange-400 font-semibold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+            className="w-full py-3 px-3 rounded-xl bg-[#20309A]/20 hover:bg-[#20309A]/35 border border-[#20309A]/50 text-[#F8F3F0] font-semibold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <Sparkles className="w-3.5 h-3.5 text-[#384DE8]" />
             <span>Instant 1-Click Creator Sign In</span>
           </button>
 
-          {/* Email Option Toggle */}
+          {/* Email OTP Option Toggle */}
           {!showEmailInput ? (
             <button
               onClick={() => setShowEmailInput(true)}
-              className="w-full text-center text-xs text-neutral-400 hover:text-white pt-1 transition-colors cursor-pointer"
+              className="w-full text-center text-xs text-[#F8F3F0]/60 hover:text-white pt-1 transition-colors cursor-pointer"
             >
-              Sign in with email instead
+              Sign in with email verification instead
             </button>
-          ) : (
-            <form onSubmit={handleEmailSignIn} className="pt-2 space-y-2">
+          ) : !otpSent ? (
+            <form onSubmit={handleSendEmailOtp} className="pt-2 space-y-2">
               <div className="flex gap-2">
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your email"
+                  placeholder="name@gmail.com"
                   required
-                  className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-orange-500"
+                  className="flex-1 bg-[#060919] border border-[#20309A]/40 rounded-xl px-3 py-2 text-xs text-[#F8F3F0] placeholder-[#F8F3F0]/40 focus:outline-none focus:border-[#384DE8]"
                 />
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#20309A] via-[#384DE8] to-[#BB232B] hover:from-[#2B3EC4] hover:to-[#D42B34] text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Sign In
+                  {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Send Code"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyEmailOtp} className="pt-2 space-y-2">
+              {devOtp && (
+                <div className="p-2 rounded-lg bg-[#20309A]/20 border border-[#20309A]/40 text-[#F8F3F0] text-[11px] flex justify-between items-center">
+                  <span>Dev Code: <strong className="font-mono text-white ml-1">{devOtp}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => setOtp(devOtp)}
+                    className="underline text-[#BB232B] cursor-pointer"
+                  >
+                    Auto-Fill
+                  </button>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Enter 6-digit code"
+                  required
+                  autoFocus
+                  className="flex-1 bg-[#060919] border border-[#20309A]/40 rounded-xl px-3 py-2 text-xs font-mono tracking-widest text-[#F8F3F0] placeholder-[#F8F3F0]/30 focus:outline-none focus:border-[#384DE8]"
+                />
+                <button
+                  type="submit"
+                  disabled={loading || otp.length < 6}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#20309A] via-[#384DE8] to-[#BB232B] hover:from-[#2B3EC4] hover:to-[#D42B34] text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Verify & Claim"}
+                </button>
+              </div>
+              <div className="flex justify-between text-[11px] text-[#F8F3F0]/60 px-1 pt-1">
+                <span>Sent to {email}</span>
+                <button
+                  type="button"
+                  onClick={() => { setOtpSent(false); setOtp(""); }}
+                  className="text-[#384DE8] hover:underline cursor-pointer"
+                >
+                  Change email
                 </button>
               </div>
             </form>

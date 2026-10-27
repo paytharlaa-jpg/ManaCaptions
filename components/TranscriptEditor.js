@@ -16,6 +16,7 @@ import {
   Mic
 } from "lucide-react";
 import { teluguToRomanized } from "@/lib/transliterate";
+import { chunkSegmentsToFourFiveWords, chunkSegmentsToSingleWord } from "@/lib/captionPacing";
 import CreditCostModal from "@/components/CreditCostModal";
 import GuestAuthModal from "@/components/GuestAuthModal";
 import { PRICING_RULES } from "@/config/pricing";
@@ -133,6 +134,22 @@ export default function TranscriptEditor({
     );
     setAiToast(offsetSec < 0 ? `⚡ Sync: shifted ${offsetSec}s earlier` : `⏱️ Sync: shifted +${offsetSec}s later`);
     setTimeout(() => setAiToast(null), 2500);
+  };
+
+  // Pacing: Re-chunk segments into strictly 4-5 words per single-line frame
+  const handleFormatFourFiveWords = () => {
+    const formatted = chunkSegmentsToFourFiveWords(segments);
+    setSegments(formatted);
+    setAiToast("⚡ Pacing: 4-5 Words / 1-Line Frame!");
+    setTimeout(() => setAiToast(null), 3000);
+  };
+
+  // Pacing: Re-chunk segments into 1-word rapid pop mode (MrBeast / Hormozi)
+  const handleFormatSingleWord = () => {
+    const formatted = chunkSegmentsToSingleWord(segments);
+    setSegments(formatted);
+    setAiToast("🔥 Pacing: 1-Word Pop Mode!");
+    setTimeout(() => setAiToast(null), 3000);
   };
 
   // Update segment text with reactive sync to video and word chips (no seek interference)
@@ -336,21 +353,21 @@ export default function TranscriptEditor({
   };
 
   return (
-    <div className="flex flex-col h-full bg-neutral-900/50 rounded-2xl border border-neutral-800 p-3 sm:p-4 overflow-hidden min-h-0">
+    <div className="flex flex-col h-full bg-[#0a0f26]/85 backdrop-blur-xl rounded-2xl border border-[#20309A]/40 p-3 sm:p-4 shadow-2xl shadow-[#20309A]/15 overflow-hidden min-h-0 relative">
       {/* Panel Top Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-neutral-800 shrink-0">
+      <div className="flex items-center justify-between pb-3 border-b border-[#20309A]/25 shrink-0">
         <div>
-          <h2 className="text-sm font-bold text-white flex items-center gap-2">
+          <h2 className="text-sm font-bold text-[#F8F3F0] flex items-center gap-2">
             <span>Transcript Segments</span>
-            <span className="text-[11px] font-mono bg-orange-500/20 text-orange-400 border border-orange-500/30 px-2 py-0.5 rounded-full font-bold">
+            <span className="text-[11px] font-mono bg-[#BB232B]/20 text-[#F8F3F0] border border-[#BB232B]/40 px-2.5 py-0.5 rounded-full font-bold shadow-sm shadow-[#BB232B]/20">
               {segments.length} lines
             </span>
             {asrInfo && (
               <span
                 className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
                   asrInfo.activeEngine === "gemini" || asrInfo.activeEngine === "groq" || asrInfo.activeEngine === "sarvam"
-                    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                    : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                    ? "bg-[#20309A]/25 text-[#F8F3F0] border-[#20309A]/50 shadow-sm shadow-[#20309A]/30"
+                    : "bg-[#060919] text-[#F8F3F0]/60 border-[#20309A]/30"
                 }`}
                 title={asrInfo.engineName}
               >
@@ -364,7 +381,7 @@ export default function TranscriptEditor({
               </span>
             )}
           </h2>
-          <p className="text-[11px] text-neutral-400 mt-0.5">
+          <p className="text-[11px] text-[#F8F3F0]/60 mt-0.5">
             Click segment to seek. Edit Telugu or Romanized scripts.
           </p>
         </div>
@@ -374,27 +391,27 @@ export default function TranscriptEditor({
           <button
             type="button"
             onClick={clearAllSegments}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-neutral-900 hover:bg-rose-950/60 text-neutral-400 hover:text-rose-400 border border-neutral-800 hover:border-rose-800/40 font-medium transition-all cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-[#060919] hover:bg-[#BB232B]/20 text-[#F8F3F0]/60 hover:text-[#F8F3F0] border border-[#20309A]/30 hover:border-[#BB232B]/40 font-medium transition-all cursor-pointer"
             title="Clear all captions and start fresh"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-3.5 h-3.5 text-[#BB232B]" />
             <span className="hidden sm:inline">Clear All</span>
           </button>
 
           <button
             type="button"
             onClick={convertAllToRomanized}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 font-medium transition-all cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-[#060919] hover:bg-[#20309A]/30 text-[#F8F3F0] border border-[#20309A]/40 font-medium transition-all cursor-pointer"
             title="Auto-generate Romanized script for all lines"
           >
-            <Languages className="w-3.5 h-3.5 text-orange-400" />
+            <Languages className="w-3.5 h-3.5 text-[#2e44d4]" />
             <span className="hidden sm:inline">Sync Romanized</span>
           </button>
 
           <button
             type="button"
             onClick={addSegment}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold shadow-sm transition-all cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-gradient-to-r from-[#20309A] to-[#2d42cc] hover:from-[#2a3ecc] hover:to-[#3b51e6] text-[#F8F3F0] font-bold shadow-md shadow-[#20309A]/40 border border-[#20309A] transition-all cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Line</span>
@@ -402,13 +419,58 @@ export default function TranscriptEditor({
         </div>
       </div>
 
+      {/* Pacing & Formatting Quick Bar (Strict 4-5 Words / 1-Line per frame) */}
+      <div className="mb-2 px-2.5 py-1.5 bg-[#060919] border border-[#20309A]/40 rounded-xl flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="text-[#F8F3F0]/60 text-[11px] font-semibold">Pacing:</span>
+          <button
+            type="button"
+            onClick={handleFormatFourFiveWords}
+            className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded-lg bg-gradient-to-r from-[#20309A] to-[#2d42cc] hover:from-[#2a3ecc] hover:to-[#3b51e6] text-[#F8F3F0] font-bold shadow-md shadow-[#20309A]/30 border border-[#20309A] transition-all cursor-pointer"
+            title="Auto-format captions to 4-5 words strictly in 1 single line per frame"
+          >
+            <Sparkles className="w-3 h-3 text-[#FFE600]" />
+            <span>⚡ 4-5 Words / 1-Line (Reel Standard)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleFormatSingleWord}
+            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-lg bg-[#0a0f2b] hover:bg-[#20309A]/30 text-[#F8F3F0] border border-[#20309A]/40 font-medium transition-all cursor-pointer"
+            title="Format each word into an individual rapid pop"
+          >
+            <span>🔥 1-Word Pop</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <span className="text-[#F8F3F0]/50 text-[11px]">Sync:</span>
+          <button
+            type="button"
+            onClick={() => nudgeTiming(-0.1)}
+            className="px-2 py-0.5 text-[10px] rounded bg-[#0a0f2b] hover:bg-[#20309A]/40 text-[#F8F3F0] font-mono border border-[#20309A]/30 cursor-pointer"
+            title="Shift captions 0.1s earlier"
+          >
+            -0.1s
+          </button>
+          <button
+            type="button"
+            onClick={() => nudgeTiming(0.1)}
+            className="px-2 py-0.5 text-[10px] rounded bg-[#0a0f2b] hover:bg-[#20309A]/40 text-[#F8F3F0] font-mono border border-[#20309A]/30 cursor-pointer"
+            title="Shift captions 0.1s later"
+          >
+            +0.1s
+          </button>
+        </div>
+      </div>
+
       {/* AI Intelligence Toolbar */}
-      <div className="my-2.5 p-2 bg-gradient-to-r from-orange-500/15 via-amber-500/10 to-transparent border border-orange-500/25 rounded-xl flex items-center justify-between gap-2 shrink-0">
+      <div className="my-1.5 p-2 bg-gradient-to-r from-[#20309A]/25 via-[#BB232B]/15 to-[#060919]/60 border border-[#20309A]/40 rounded-xl flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-1.5">
-          <Wand2 className="w-3.5 h-3.5 text-orange-400 animate-pulse" />
-          <span className="text-xs font-bold text-white">AI Tools:</span>
+          <Wand2 className="w-3.5 h-3.5 text-[#F8F3F0] animate-pulse" />
+          <span className="text-xs font-bold text-[#F8F3F0]">AI Tools:</span>
           {aiToast && (
-            <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
+            <span className="text-[11px] font-semibold text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
               <Check className="w-3 h-3" />
               {aiToast}
             </span>
@@ -417,7 +479,7 @@ export default function TranscriptEditor({
 
         <div className="flex items-center gap-1.5">
           {onRetranscribe && (
-            <div className="flex items-center gap-1 bg-neutral-900 border border-neutral-700/80 rounded-lg p-0.5">
+            <div className="flex items-center gap-1 bg-[#060919] border border-[#20309A]/40 rounded-lg p-0.5">
               <select
                 value={selectedLanguage}
                 onChange={(e) => {
@@ -426,20 +488,20 @@ export default function TranscriptEditor({
                   onRetranscribe(newLang);
                 }}
                 disabled={isTranscribing}
-                className="bg-transparent text-neutral-300 text-[11px] px-1.5 py-0.5 font-medium cursor-pointer focus:outline-none"
+                className="bg-transparent text-[#F8F3F0] text-[11px] px-1.5 py-0.5 font-medium cursor-pointer focus:outline-none"
                 title="Select language for speech recognition"
               >
-                <option value="auto" className="bg-neutral-900 text-white">🌐 Auto</option>
-                <option value="te" className="bg-neutral-900 text-white">🇮🇳 Telugu</option>
-                <option value="en" className="bg-neutral-900 text-white">🔤 English</option>
+                <option value="auto" className="bg-[#060919] text-[#F8F3F0]">🌐 Auto</option>
+                <option value="te" className="bg-[#060919] text-[#F8F3F0]">🇮🇳 Telugu</option>
+                <option value="en" className="bg-[#060919] text-[#F8F3F0]">🔤 English</option>
               </select>
               <button
                 onClick={() => onRetranscribe(selectedLanguage)}
                 disabled={isTranscribing}
-                className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-all cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold rounded bg-[#0a0f2b] hover:bg-[#20309A]/30 text-[#F8F3F0] transition-all cursor-pointer disabled:opacity-50"
                 title="Re-run AI speech recognition with chosen language"
               >
-                {isTranscribing ? <Loader2 className="w-3 h-3 animate-spin text-orange-400" /> : <Mic className="w-3 h-3 text-orange-400" />}
+                {isTranscribing ? <Loader2 className="w-3 h-3 animate-spin text-[#BB232B]" /> : <Mic className="w-3 h-3 text-[#2e44d4]" />}
                 <span>{isTranscribing ? "Transcribing..." : "Re-Transcribe"}</span>
               </button>
             </div>
@@ -448,30 +510,30 @@ export default function TranscriptEditor({
           <button
             onClick={() => handleAiAction("translate_telugu")}
             disabled={isAiLoading || segments.length === 0}
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border border-orange-500/40 transition-all cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-[#20309A]/30 hover:bg-[#20309A]/50 text-[#F8F3F0] border border-[#20309A]/60 shadow-sm shadow-[#20309A]/30 transition-all cursor-pointer disabled:opacity-50"
             title="Convert and translate all captions into authentic Telugu script (తెలుగు లిపి)"
           >
-            {isAiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3 text-orange-400" />}
+            {isAiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3 text-[#F8F3F0]" />}
             <span>🇮🇳 To Telugu</span>
           </button>
 
           <button
             onClick={() => handleAiAction("auto_emoji")}
             disabled={isAiLoading || segments.length === 0}
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 transition-all cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-[#060919] hover:bg-[#20309A]/30 text-[#F8F3F0] border border-[#20309A]/40 transition-all cursor-pointer disabled:opacity-50"
             title="Scan viral trigger keywords and auto-inject matching emojis (🔥, 💰, 🤫, 🤯, ⚡)"
           >
-            {isAiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+            {isAiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3 text-[#BB232B]" />}
             <span>Auto-Emoji</span>
           </button>
 
           {/* Audio-Video Timing Nudge */}
-          <div className="flex items-center gap-1 bg-neutral-900 border border-neutral-700/80 rounded-lg px-2 py-0.5 text-xs text-neutral-300">
-            <span className="text-[10px] font-semibold text-neutral-400">Sync:</span>
+          <div className="flex items-center gap-1 bg-[#060919] border border-[#20309A]/40 rounded-lg px-2 py-0.5 text-xs text-[#F8F3F0]">
+            <span className="text-[10px] font-semibold text-[#F8F3F0]/60">Sync:</span>
             <button
               type="button"
               onClick={() => nudgeTiming(-0.1)}
-              className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-neutral-800 hover:bg-neutral-700 text-orange-400 border border-neutral-700/80 transition-all cursor-pointer"
+              className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-[#0a0f2b] hover:bg-[#20309A]/40 text-[#F8F3F0] border border-[#20309A]/40 transition-all cursor-pointer"
               title="Shift all captions 0.1s earlier (if captions appear after speech)"
             >
               -0.1s
@@ -479,7 +541,7 @@ export default function TranscriptEditor({
             <button
               type="button"
               onClick={() => nudgeTiming(0.1)}
-              className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-neutral-800 hover:bg-neutral-700 text-orange-400 border border-neutral-700/80 transition-all cursor-pointer"
+              className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-[#0a0f2b] hover:bg-[#20309A]/40 text-[#F8F3F0] border border-[#20309A]/40 transition-all cursor-pointer"
               title="Shift all captions 0.1s later (if captions appear before speech)"
             >
               +0.1s
@@ -500,13 +562,13 @@ export default function TranscriptEditor({
 
       {/* Live Transcription Loading Banner */}
       {isTranscribing && (
-        <div className="p-3 mb-2.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-300 text-xs flex items-center justify-between animate-pulse shrink-0">
+        <div className="p-3 mb-2.5 rounded-xl bg-gradient-to-r from-[#20309A]/30 to-[#BB232B]/20 border border-[#20309A]/50 text-[#F8F3F0] text-xs flex items-center justify-between animate-pulse shrink-0">
           <div className="flex items-center gap-2 font-medium">
-            <Loader2 className="w-4 h-4 animate-spin text-orange-400 shrink-0" />
-            <span>Transcribing Telugu speech with AI... (Matching word timings)</span>
+            <Loader2 className="w-4 h-4 animate-spin text-[#BB232B] shrink-0" />
+            <span>Transcribing speech with ManaCaption AI... (Matching word timings)</span>
           </div>
-          <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 font-bold shrink-0">
-            {asrInfo?.activeEngine || "AI ASR"}
+          <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-[#20309A]/40 text-[#F8F3F0] font-bold border border-[#20309A] shrink-0">
+            {asrInfo?.activeEngine || "Mana AI"}
           </span>
         </div>
       )}
@@ -515,27 +577,27 @@ export default function TranscriptEditor({
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2.5 pt-1 pr-1">
         {/* Active AI Transcription Progress Indicator */}
         {isTranscribing && (
-          <div className="p-4 rounded-xl bg-gradient-to-r from-orange-500/20 via-amber-500/15 to-orange-500/10 border border-orange-500/40 text-center flex flex-col items-center justify-center gap-2 animate-pulse">
-            <div className="flex items-center gap-2 text-orange-400 font-bold text-sm">
-              <Loader2 className="w-4 h-4 animate-spin text-orange-400 shrink-0" />
-              <span>AI Transcribing Speech & Timestamps...</span>
+          <div className="p-4 rounded-xl bg-gradient-to-r from-[#20309A]/25 via-[#BB232B]/20 to-[#20309A]/15 border border-[#20309A]/50 text-center flex flex-col items-center justify-center gap-2 animate-pulse">
+            <div className="flex items-center gap-2 text-[#F8F3F0] font-bold text-sm">
+              <Loader2 className="w-4 h-4 animate-spin text-[#BB232B] shrink-0" />
+              <span>ManaCaption AI Transcribing Speech & Timestamps...</span>
             </div>
-            <p className="text-xs text-neutral-300 max-w-sm">
+            <p className="text-xs text-[#F8F3F0]/70 max-w-sm">
               Generating timed Telugu & English dual-script captions with word sync. Almost ready...
             </p>
-            <div className="w-48 h-1 bg-neutral-800 rounded-full overflow-hidden mt-0.5">
-              <div className="h-full bg-gradient-to-r from-orange-500 to-amber-400 animate-pulse w-3/4 rounded-full" />
+            <div className="w-48 h-1 bg-[#060919] rounded-full overflow-hidden mt-0.5">
+              <div className="h-full bg-gradient-to-r from-[#20309A] via-[#3d56eb] to-[#BB232B] animate-pulse w-3/4 rounded-full" />
             </div>
           </div>
         )}
 
         {segments.length === 0 && !isTranscribing && (
-          <div className="flex-1 flex flex-col items-center justify-center text-center py-12 text-neutral-400">
+          <div className="flex-1 flex flex-col items-center justify-center text-center py-12 text-[#F8F3F0]/60">
             <p className="text-sm font-medium">No caption lines yet.</p>
             <button
               type="button"
               onClick={addSegment}
-              className="mt-3 px-3 py-1.5 rounded-lg bg-orange-500 text-white font-bold text-xs hover:bg-orange-600 transition-all cursor-pointer"
+              className="mt-3 px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#20309A] to-[#2d42cc] text-[#F8F3F0] font-bold text-xs hover:from-[#2a3ecc] hover:to-[#3b51e6] shadow-md shadow-[#20309A]/30 border border-[#20309A] transition-all cursor-pointer"
             >
               + Add First Caption Line
             </button>
@@ -551,28 +613,28 @@ export default function TranscriptEditor({
               ref={isActive ? activeCardRef : null}
               className={`p-3 rounded-xl border transition-all duration-150 ${
                 isActive
-                  ? "bg-neutral-800/95 border-orange-500 ring-2 ring-orange-500/40 shadow-lg shadow-orange-500/10"
-                  : "bg-neutral-950/80 border-neutral-800 hover:border-neutral-700"
+                  ? "bg-[#0d1640] border-[#20309A] ring-2 ring-[#20309A]/60 shadow-xl shadow-[#20309A]/25"
+                  : "bg-[#060919]/70 border-[#20309A]/25 hover:border-[#20309A]/50 hover:bg-[#080d2b]/80"
               }`}
             >
               {/* Card Meta Row: Number, Timing, Tools */}
               <div className="flex items-center justify-between text-xs mb-2">
                 <div className="flex items-center gap-2">
                   <span className={`font-mono font-bold text-xs px-2 py-0.5 rounded ${
-                    isActive ? "bg-orange-500 text-white" : "bg-neutral-800 text-neutral-300"
+                    isActive ? "bg-gradient-to-r from-[#20309A] to-[#2e44d4] text-[#F8F3F0] border border-[#20309A]" : "bg-[#0a0f2b] text-[#F8F3F0]/70 border border-[#20309A]/30"
                   }`}>
                     #{String(idx + 1).padStart(2, '0')}
                   </span>
 
                   {isActive ? (
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-500/20">
-                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-ping" />
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-[#F8F3F0] bg-[#BB232B]/20 px-2 py-0.5 rounded-full border border-[#BB232B]/50 shadow-sm shadow-[#BB232B]/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#BB232B] animate-ping" />
                       Playing
                     </span>
                   ) : (
                     <button
                       onClick={() => onSeek(Number((seg.start + 0.05).toFixed(2)))}
-                      className="text-[10px] text-neutral-400 hover:text-white flex items-center gap-0.5 cursor-pointer"
+                      className="text-[10px] text-[#F8F3F0]/60 hover:text-[#F8F3F0] flex items-center gap-0.5 cursor-pointer"
                     >
                       <Play className="w-2.5 h-2.5 fill-current" />
                       <span>Seek</span>
@@ -582,27 +644,27 @@ export default function TranscriptEditor({
 
                 {/* Timestamps inputs */}
                 <div className="flex items-center gap-1 font-mono text-xs">
-                  <Clock className="w-3 h-3 text-neutral-500" />
+                  <Clock className="w-3 h-3 text-[#F8F3F0]/40" />
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     value={seg.start}
                     onChange={e => updateSegmentTime(seg.id, "start", e.target.value)}
-                    className="w-14 px-1 py-0.5 bg-neutral-900 border border-neutral-700 rounded text-center text-white text-xs font-semibold focus:border-orange-500 focus:outline-none"
+                    className="w-14 px-1 py-0.5 bg-[#060919] border border-[#20309A]/40 rounded text-center text-[#F8F3F0] text-xs font-semibold focus:border-[#20309A] focus:outline-none"
                     title="Start time"
                   />
-                  <span className="text-neutral-500">→</span>
+                  <span className="text-[#F8F3F0]/40">→</span>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     value={seg.end}
                     onChange={e => updateSegmentTime(seg.id, "end", e.target.value)}
-                    className="w-14 px-1 py-0.5 bg-neutral-900 border border-neutral-700 rounded text-center text-white text-xs font-semibold focus:border-orange-500 focus:outline-none"
+                    className="w-14 px-1 py-0.5 bg-[#060919] border border-[#20309A]/40 rounded text-center text-[#F8F3F0] text-xs font-semibold focus:border-[#20309A] focus:outline-none"
                     title="End time"
                   />
-                  <span className="text-[10px] text-neutral-400 font-mono ml-0.5">
+                  <span className="text-[10px] text-[#F8F3F0]/50 font-mono ml-0.5">
                     ({(seg.end - seg.start).toFixed(1)}s)
                   </span>
                 </div>
@@ -611,7 +673,7 @@ export default function TranscriptEditor({
                 <div className="flex items-center gap-0.5">
                   <button
                     onClick={() => splitSegment(seg.id)}
-                    className="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white cursor-pointer"
+                    className="p-1 rounded hover:bg-[#20309A]/20 text-[#F8F3F0]/60 hover:text-[#F8F3F0] cursor-pointer"
                     title="Split line at midpoint"
                   >
                     <Scissors className="w-3.5 h-3.5" />
@@ -620,7 +682,7 @@ export default function TranscriptEditor({
                   {idx < segments.length - 1 && (
                     <button
                       onClick={() => mergeWithNext(idx)}
-                      className="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white cursor-pointer"
+                      className="p-1 rounded hover:bg-[#20309A]/20 text-[#F8F3F0]/60 hover:text-[#F8F3F0] cursor-pointer"
                       title="Merge with next line"
                     >
                       <Merge className="w-3.5 h-3.5" />
@@ -630,7 +692,7 @@ export default function TranscriptEditor({
                   <button
                     type="button"
                     onClick={() => deleteSegment(seg.id)}
-                    className="p-1 rounded hover:bg-rose-950 text-neutral-400 hover:text-rose-400 cursor-pointer transition-colors"
+                    className="p-1 rounded hover:bg-[#BB232B]/30 text-[#F8F3F0]/60 hover:text-[#BB232B] cursor-pointer transition-colors"
                     title="Delete line"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -642,11 +704,11 @@ export default function TranscriptEditor({
               <div className="space-y-1.5">
                 {/* Native Telugu Script */}
                 <div>
-                  <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-0.5">
+                  <div className="flex items-center justify-between text-[11px] text-[#F8F3F0]/60 mb-0.5">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-neutral-300">తెలుగు (Native Script)</span>
+                      <span className="font-semibold text-[#F8F3F0]">తెలుగు (Native Script)</span>
                       {scriptMode === "telugu" || scriptMode === "both" ? (
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 rounded-full">
+                        <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 rounded-full">
                           ● Live on Video
                         </span>
                       ) : (
@@ -656,7 +718,7 @@ export default function TranscriptEditor({
                             setScriptMode?.("telugu");
                             onSeek?.(Number((seg.start + 0.05).toFixed(2)));
                           }}
-                          className="text-[10px] text-neutral-400 hover:text-orange-400 underline cursor-pointer"
+                          className="text-[10px] text-[#F8F3F0]/60 hover:text-[#2e44d4] underline cursor-pointer"
                         >
                           Show on Video
                         </button>
@@ -665,9 +727,9 @@ export default function TranscriptEditor({
                     <button
                       type="button"
                       onClick={() => autoConvertScript(seg.id)}
-                      className="text-[10px] text-orange-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                      className="text-[10px] text-[#2e44d4] hover:underline flex items-center gap-0.5 cursor-pointer font-bold"
                     >
-                      <Sparkles className="w-2.5 h-2.5" />
+                      <Sparkles className="w-2.5 h-2.5 text-[#BB232B]" />
                       Sync Romanized
                     </button>
                   </div>
@@ -680,14 +742,14 @@ export default function TranscriptEditor({
                         setScriptMode?.("telugu");
                       }}
                       onChange={e => updateSegmentText(seg.id, e.target.value, false)}
-                      className="w-full px-2.5 py-1.5 pr-7 bg-neutral-900 border border-neutral-700/80 rounded-lg text-white text-sm font-semibold focus:border-orange-500 focus:outline-none transition-all font-sans"
+                      className="w-full px-2.5 py-1.5 pr-7 bg-[#060919] border border-[#20309A]/40 rounded-lg text-[#F8F3F0] text-sm font-semibold focus:border-[#20309A] focus:outline-none transition-all font-sans"
                       placeholder="తెలుగు టెక్స్ట్ రాయండి..."
                     />
                     {seg.text && (
                       <button
                         type="button"
                         onClick={() => updateSegmentText(seg.id, "", false)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300 p-0.5 rounded text-xs cursor-pointer"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#F8F3F0]/40 hover:text-[#F8F3F0] p-0.5 rounded text-xs cursor-pointer"
                         title="Clear text"
                       >
                         ✕
@@ -698,11 +760,11 @@ export default function TranscriptEditor({
 
                 {/* Romanized English Script */}
                 <div>
-                  <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-0.5">
+                  <div className="flex items-center justify-between text-[11px] text-[#F8F3F0]/60 mb-0.5">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-neutral-300">Romanized (English)</span>
+                      <span className="font-semibold text-[#F8F3F0]">Romanized (English)</span>
                       {scriptMode === "romanized" || scriptMode === "both" ? (
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 rounded-full">
+                        <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 rounded-full">
                           ● Live on Video
                         </span>
                       ) : (
@@ -712,7 +774,7 @@ export default function TranscriptEditor({
                             setScriptMode?.("romanized");
                             onSeek?.(Number((seg.start + 0.05).toFixed(2)));
                           }}
-                          className="text-[10px] text-neutral-400 hover:text-orange-400 underline cursor-pointer"
+                          className="text-[10px] text-[#F8F3F0]/60 hover:text-[#2e44d4] underline cursor-pointer"
                         >
                           Show on Video
                         </button>
@@ -728,14 +790,14 @@ export default function TranscriptEditor({
                         setScriptMode?.("romanized");
                       }}
                       onChange={e => updateSegmentText(seg.id, e.target.value, true)}
-                      className="w-full px-2.5 py-1 pr-7 bg-neutral-900 border border-neutral-700/80 rounded-lg text-neutral-200 text-xs font-mono focus:border-orange-500 focus:outline-none transition-all"
+                      className="w-full px-2.5 py-1 pr-7 bg-[#060919] border border-[#20309A]/40 rounded-lg text-[#F8F3F0] text-xs font-mono focus:border-[#20309A] focus:outline-none transition-all"
                       placeholder="Type Romanized spelling..."
                     />
                     {seg.romanizedText && (
                       <button
                         type="button"
                         onClick={() => updateSegmentText(seg.id, "", true)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300 p-0.5 rounded text-xs cursor-pointer"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#F8F3F0]/40 hover:text-[#F8F3F0] p-0.5 rounded text-xs cursor-pointer"
                         title="Clear text"
                       >
                         ✕
@@ -747,8 +809,8 @@ export default function TranscriptEditor({
 
               {/* Interactive Word Chips */}
               {seg.words && seg.words.length > 0 && (
-                <div className="mt-2 pt-1.5 border-t border-neutral-800/80 flex flex-wrap gap-1 items-center">
-                  <span className="text-[10px] font-mono text-neutral-500 mr-0.5">Words:</span>
+                <div className="mt-2 pt-1.5 border-t border-[#20309A]/30 flex flex-wrap gap-1 items-center">
+                  <span className="text-[10px] font-mono text-[#F8F3F0]/50 mr-0.5">Words:</span>
                   {seg.words.map((w, wIdx) => {
                     const isWordActive = currentTime >= w.start && currentTime <= w.end;
                     const wordLabel = scriptMode === "romanized" ? (w.romanized || w.word) : w.word;
@@ -757,10 +819,10 @@ export default function TranscriptEditor({
                       <button
                         key={wIdx}
                         onClick={() => onSeek(w.start)}
-                        className={`text-[11px] px-1.5 py-0.5 rounded transition-all cursor-pointer font-medium ${
+                        className={`text-[11px] px-2 py-0.5 rounded transition-all cursor-pointer font-medium ${
                           isWordActive
-                            ? "bg-orange-500 text-white font-bold shadow-sm"
-                            : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800 border border-neutral-800"
+                            ? "bg-gradient-to-r from-[#BB232B] to-[#d82a34] text-[#F8F3F0] font-bold shadow-md shadow-[#BB232B]/40 scale-105 border border-[#BB232B]"
+                            : "bg-[#060919] text-[#F8F3F0]/70 hover:bg-[#20309A]/20 hover:text-[#F8F3F0] border border-[#20309A]/30"
                         }`}
                         title={`Click to seek to ${w.start}s`}
                       >
@@ -781,7 +843,7 @@ export default function TranscriptEditor({
         onClose={() => { setCostModalOpen(false); setPendingAiAction(null); }}
         onConfirm={() => executeAiAction(pendingAiAction?.actionType || "translate_telugu")}
         cost={pendingAiAction?.cost || 1}
-        currentBalance={user?.credits_balance ?? 100}
+        currentBalance={user?.credits_balance ?? 10}
         durationSec={pendingAiAction?.durationSec}
         actionTitle="Translate to Native Telugu"
         description="Converts transliterated text into authentic Native Telugu script."

@@ -74,7 +74,6 @@ export default function UploadDropzone({
     if (file) {
       validateAndProceed(file);
     }
-    // Reset value so re-selecting the same file triggers onChange
     if (e.target) {
       e.target.value = "";
     }
@@ -84,36 +83,36 @@ export default function UploadDropzone({
     <div className="max-w-2xl w-full mx-auto p-6 sm:p-10 flex flex-col items-center text-center">
       {/* Title & Hook */}
       <div className="mb-6 space-y-3">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-xs font-semibold shadow-sm">
-          <span className={`w-2 h-2 rounded-full ${isCloudProvider ? "bg-emerald-400 animate-pulse" : "bg-orange-400"}`} />
-          <span className="text-white font-medium">{engineLabel}</span>
+        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#0D1333] border border-[#20309A]/40 text-xs font-semibold shadow-sm">
+          <span className={`w-2 h-2 rounded-full ${isCloudProvider ? "bg-emerald-400 animate-pulse" : "bg-[#BB232B] animate-pulse"}`} />
+          <span className="text-[#F8F3F0] font-medium">{engineLabel}</span>
           {isCloudProvider && (
-            <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400 font-bold border border-emerald-500/30">
+            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-[#BB232B]/20 text-[#F8F3F0] font-bold border border-[#BB232B]/40">
               Live Cloud ASR
             </span>
           )}
         </div>
-        <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
-          Create <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-300 to-rose-400">ManaCaptions</span> in Seconds
+        <h1 className="text-3xl sm:text-5xl font-black text-[#F8F3F0] tracking-tight leading-tight">
+          Create <span className="bg-gradient-to-r from-[#384DE8] via-[#F8F3F0] to-[#E0353E] bg-clip-text text-transparent">ManaCaption</span> in Seconds
         </h1>
-        <p className="text-neutral-400 text-sm sm:text-base max-w-lg mx-auto">
-          Upload a Short or Reel, generate accurate Telugu & Romanized captions, customize viral styles, and export your post-ready video.
+        <p className="text-[#F8F3F0]/70 text-sm sm:text-base max-w-lg mx-auto leading-relaxed">
+          Upload a Short or Reel, generate accurate Telugu &amp; Romanized captions, customize viral styles, and export your post-ready video.
         </p>
       </div>
 
       {/* Audio & Spoken Language Mode Selector */}
-      <div className="mb-6 flex flex-col sm:flex-row items-center gap-2 bg-neutral-900/90 p-1.5 rounded-2xl border border-neutral-800 text-xs shadow-inner">
-        <span className="text-neutral-400 font-medium px-2">
+      <div className="mb-6 flex flex-col sm:flex-row items-center gap-2 bg-[#090D24] p-1.5 rounded-2xl border border-[#20309A]/40 text-xs shadow-inner">
+        <span className="text-[#F8F3F0]/60 font-medium px-2">
           Language:
         </span>
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => setSelectedLanguage("auto")}
-            className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               selectedLanguage === "auto"
-                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/20"
-                : "text-neutral-400 hover:text-white hover:bg-neutral-800"
+                ? "bg-gradient-to-r from-[#20309A] to-[#BB232B] text-[#F8F3F0] shadow-md shadow-[#20309A]/40 font-bold"
+                : "text-[#F8F3F0]/60 hover:text-white hover:bg-[#111840]"
             }`}
           >
             🌐 Auto-Detect
@@ -121,10 +120,10 @@ export default function UploadDropzone({
           <button
             type="button"
             onClick={() => setSelectedLanguage("te")}
-            className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               selectedLanguage === "te"
-                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/20"
-                : "text-neutral-400 hover:text-white hover:bg-neutral-800"
+                ? "bg-gradient-to-r from-[#20309A] to-[#BB232B] text-[#F8F3F0] shadow-md shadow-[#20309A]/40 font-bold"
+                : "text-[#F8F3F0]/60 hover:text-white hover:bg-[#111840]"
             }`}
           >
             🇮🇳 తెలుగు (Telugu)
@@ -132,10 +131,10 @@ export default function UploadDropzone({
           <button
             type="button"
             onClick={() => setSelectedLanguage("en")}
-            className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               selectedLanguage === "en"
-                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/20"
-                : "text-neutral-400 hover:text-white hover:bg-neutral-800"
+                ? "bg-gradient-to-r from-[#20309A] to-[#BB232B] text-[#F8F3F0] shadow-md shadow-[#20309A]/40 font-bold"
+                : "text-[#F8F3F0]/60 hover:text-white hover:bg-[#111840]"
             }`}
           >
             🔤 English
@@ -158,10 +157,10 @@ export default function UploadDropzone({
         tabIndex={0}
         role="button"
         aria-label="Upload video file"
-        className={`w-full p-8 sm:p-12 rounded-3xl border-2 border-dashed transition-all cursor-pointer relative overflow-hidden group outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 ${
+        className={`w-full p-8 sm:p-12 rounded-3xl border-2 border-dashed transition-all cursor-pointer relative overflow-hidden group outline-none focus:border-[#384DE8] focus:ring-2 focus:ring-[#20309A]/30 ${
           isDragOver
-            ? "border-orange-500 bg-orange-500/10 scale-[1.01]"
-            : "border-neutral-800 bg-neutral-900/50 hover:border-neutral-700 hover:bg-neutral-900/80"
+            ? "border-[#BB232B] bg-[#20309A]/15 scale-[1.01]"
+            : "border-[#20309A]/40 bg-[#0C1230]/60 hover:border-[#384DE8] hover:bg-[#0E1538]/80 shadow-[0_10px_35px_rgba(0,0,0,0.5)]"
         }`}
       >
         <input
@@ -174,22 +173,22 @@ export default function UploadDropzone({
         />
 
         {/* Floating background gradient orb */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-[#20309A]/20 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col items-center">
           {/* Animated upload icon */}
-          <div className="w-16 h-16 rounded-2xl bg-neutral-950 border border-neutral-800 flex items-center justify-center mb-4 group-hover:scale-110 group-hover:border-orange-500/50 transition-all shadow-xl">
+          <div className="w-16 h-16 rounded-2xl bg-[#070A1E] border border-[#20309A]/50 flex items-center justify-center mb-4 group-hover:scale-110 group-hover:border-[#BB232B] transition-all shadow-[0_0_20px_rgba(32,48,154,0.3)]">
             {isTranscribing ? (
-              <Loader2 className="w-8 h-8 text-orange-400 animate-spin" />
+              <Loader2 className="w-8 h-8 text-[#384DE8] animate-spin" />
             ) : (
-              <Upload className="w-8 h-8 text-neutral-300 group-hover:text-orange-400 transition-colors" />
+              <Upload className="w-8 h-8 text-[#F8F3F0]/80 group-hover:text-[#F8F3F0] transition-colors" />
             )}
           </div>
 
-          <h3 className="text-base sm:text-lg font-bold text-white mb-1">
+          <h3 className="text-base sm:text-lg font-bold text-[#F8F3F0] mb-1">
             {isTranscribing ? "Transcribing Telugu Speech..." : "Drop your Reel or Short here"}
           </h3>
-          <p className="text-xs sm:text-sm text-neutral-400 max-w-sm mb-4">
+          <p className="text-xs sm:text-sm text-[#F8F3F0]/60 max-w-sm mb-5">
             Supports MP4, MOV, WebM, MKV · Automatically generates Dual-Script captions
           </p>
 
@@ -211,7 +210,7 @@ export default function UploadDropzone({
               e.stopPropagation();
               fileInputRef.current?.click();
             }}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs sm:text-sm font-bold shadow-lg shadow-orange-500/20 flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
+            className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#20309A] via-[#384DE8] to-[#BB232B] hover:from-[#2B3EC4] hover:to-[#D42B34] text-[#F8F3F0] text-xs sm:text-sm font-bold shadow-[0_0_20px_rgba(32,48,154,0.4)] flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
           >
             <Film className="w-4 h-4" />
             <span>Select Video File</span>
@@ -221,22 +220,22 @@ export default function UploadDropzone({
 
       {/* Error alert */}
       {errorMessage && (
-        <div className="mt-4 p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
+        <div className="mt-4 p-3.5 rounded-2xl bg-[#BB232B]/15 border border-[#BB232B]/40 text-[#F8F3F0] text-xs flex items-center gap-2 shadow-lg">
+          <AlertCircle className="w-4 h-4 shrink-0 text-[#E0353E]" />
           <span>{errorMessage}</span>
         </div>
       )}
 
       {/* Instant Demo Reel Shortcut */}
-      <div className="mt-8 pt-6 border-t border-neutral-800/80 w-full flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-neutral-400">
+      <div className="mt-8 pt-6 border-t border-[#20309A]/30 w-full flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#F8F3F0]/60">
         <span>Don&apos;t have a video file ready right now?</span>
         <button
           onClick={onLoadDemo}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-orange-400 border border-orange-500/30 font-semibold transition-all hover:scale-105"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0D1333] hover:bg-[#141C48] text-[#F8F3F0] border border-[#20309A]/50 font-semibold transition-all hover:scale-105 shadow-sm"
         >
-          <Sparkles className="w-3.5 h-3.5" />
+          <Sparkles className="w-3.5 h-3.5 text-[#384DE8]" />
           <span>Test with Instant Demo Reel</span>
-          <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+          <ArrowRight className="w-3.5 h-3.5 ml-0.5 text-[#BB232B]" />
         </button>
       </div>
     </div>
