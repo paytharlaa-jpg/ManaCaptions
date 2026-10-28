@@ -282,165 +282,219 @@ export async function POST(request) {
  * - Groq Whisper stays well under its 25MB limit (350KB << 25MB).
  * - Gemini base64 payload is ~450KB (instant network transfer, zero 413/503 timeouts).
  */
+
 async function extractAudioFromFile(file) {
   const fileBuffer = Buffer.from(await file.arrayBuffer());
   const mimeType = (file.type || "").toLowerCase();
 
-  // If already a lightweight audio file (<15MB), use directly
-  if (mimeType.startsWith("audio/") && fileBuffer.length < 15 * 1024 * 1024) {
+  // Use an existing audio file directly if it is under 15 MB.
+  if (
+    mimeType.startsWith("audio/") &&
+    fileBuffer.length > 0 &&
+    fileBuffer.length < 15 * 1024 * 1024
+  ) {
     return {
       audioBuffer: fileBuffer,
-      mimeType: file.type || "audio/mp3",
-      filename: file.name || "audio.mp3"
+      mimeType: file.type || "audio/mpeg",
+      filename: file.name || "audio.mp3",
     };
+  }
+
+  if (fileBuffer.length === 0) {
+    throw new Error("The uploaded file is empty.");
   }
 
   const tmpId = crypto.randomBytes(8).toString("hex");
   const tempDir = os.tmpdir();
-  const inputExt = mimeType.includes("webm") ? ".webm" : mimeType.includes("mov") ? ".mov" : ".mp4";
+
+  const inputExt = mimeType.includes("webm")
+    ? ".webm"
+    : mimeType.includes("quicktime") || mimeType.includes("mov")
+      ? ".mov"
+      : mimeType.includes("ogg")
+        ? ".ogg"
+        : mimeType.includes("wav")
+          ? ".wav"
+          : mimeType.includes("audio/")
+            ? ".audio"
+            : ".mp4";
+
   const inputPath = path.join(tempDir, `tc_in_${tmpId}${inputExt}`);
   const outputPath = path.join(tempDir, `tc_out_${tmpId}.mp3`);
 
   try {
     await fs.writeFile(inputPath, fileBuffer);
+
     const ffmpegBinary = getFfmpegBinary();
 
-    if (ffmpegBinary) {
-      const result = spawnSync(ffmpegBinary, [
+    if (!ffmpegBinary) {
+      throw new Error(
+        "FFmpeg was not found. Check your getFfmpegBinary() configuration."
+      );
+    }
+
+    const result = spawnSync(
+      ffmpegBinary,
+      [
         "-y",
         "-i", inputPath,
         "-vn",
         "-ac", "1",
         "-ar", "16000",
         "-b:a", "64k",
-        outputPath
-      ], { timeout: 35000 });
-
-      if (result.status === 0) {
-        const audioBuffer = await fs.readFile(outputPath);
-        if (audioBuffer && audioBuffer.length > 0) {
-          return {
-            audioBuffer,
-            mimeType: "audio/mp3",
-            filename: "audio.mp3"
-          };
-        }
-      } else {
-        console.warn("FFmpeg audio extraction exited with status:", result.status, result.stderr?.toString()?.slice(-200));
+        "-f", "mp3",
+        outputPath,
+      ],
+      {
+        timeout: 35000,
+        encoding: "utf8",
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
       }
+    );
+
+    if (result.error) {
+      throw new Error(`FFmpeg could not run: ${result.error.message}`);
     }
-  } catch (err) {
-    console.warn("FFmpeg audio extraction error:", err.message);
+
+    if (result.status !== 0) {
+      const details = (result.stderr || "").slice(-1000);
+
+      throw new Error(
+        `FFmpeg audio extraction failed (exit code ${result.status}). ${details}`
+      );
+    }
+
+    const audioBuffer = await fs.readFile(outputPath);
+
+    if (audioBuffer.length === 0) {
+      throw new Error("FFmpeg produced an empty audio file.");
+    }
+
+    return {
+      audioBuffer,
+      mimeType: "audio/mpeg",
+      filename: "audio.mp3",
+    };
+  } catch (error) {
+    console.error("Audio extraction failed:", error);
+
+    throw new Error(
+      `Could not extract audio: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   } finally {
     await fs.unlink(inputPath).catch(() => {});
     await fs.unlink(outputPath).catch(() => {});
   }
-
-  return {
-    audioBuffer: fileBuffer,
-    mimeType: file.type || "audio/mp4",
-    filename: file.name || "audio.mp4"
-  };
 }
 
 /**
  * Inner transcription pipeline (Preserved black box with full duration support)
  */
+
 async function runTranscriptionPipeline(file, language, durationSec = 30) {
-  // Extract lightweight audio stream (~350KB) to ensure lightning-fast, truncation-free processing
   const audioData = await extractAudioFromFile(file);
 
-  const preferred = (process.env.ASR_PROVIDER || "gemini").toLowerCase();
-  const hasSarvam = Boolean(process.env.SARVAM_API_KEY && process.env.SARVAM_API_KEY.trim());
-  const hasGroq = Boolean(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim());
-  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim());
-  const hasGemini = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
+  const preferred = (
+    process.env.ASR_PROVIDER || "gemini"
+  ).trim().toLowerCase();
 
-  // 1. Primary: Google Gemini 2.5 Flash Multimodal Audio (Default)
-  let geminiAttemptedAndFailed = false;
-  if (hasGemini && preferred !== "groq" && preferred !== "sarvam") {
-    try {
-      const geminiResult = await transcribeWithGemini(audioData, language, durationSec);
-      if (geminiResult && geminiResult.segments && geminiResult.segments.length > 0) {
-        return {
-          ok: true,
-          provider: "gemini",
-          engineName: "Google Gemini 2.5 Flash",
-          detectedLanguage: geminiResult.detectedLanguage,
-          songTitle: geminiResult.songTitle,
-          segments: chunkSegmentsToFourFiveWords(geminiResult.segments)
-        };
-      }
-    } catch (err) {
-      geminiAttemptedAndFailed = true;
-      console.warn("Gemini transcription failed or truncated early, attempting Groq Whisper fallback:", err.message);
-    }
-  }
-
-  // 2. Fallback: Groq Whisper Large v3 Turbo (Ultra Fast ~1.2s, 0 hallucination)
-  if (hasGroq && (preferred === "groq" || geminiAttemptedAndFailed || !hasGemini)) {
-    try {
-      const groqResult = await transcribeWithGroq(audioData, language);
-      if (groqResult && groqResult.segments && groqResult.segments.length > 0) {
-        return {
-          ok: true,
-          provider: "groq",
-          engineName: "Groq Whisper Large v3 Turbo",
-          detectedLanguage: groqResult.detectedLanguage,
-          segments: chunkSegmentsToFourFiveWords(groqResult.segments)
-        };
-      }
-    } catch (err) {
-      console.warn("Groq fallback transcription failed:", err.message);
-    }
-  }
-
-  // 3. Try Sarvam AI Saaras Indic ASR (Specialized for Indian languages)
-  if (hasSarvam) {
-    try {
-      const sarvamResult = await transcribeWithSarvam(audioData, language);
-      if (sarvamResult && sarvamResult.length > 0) {
-        return {
-          ok: true,
-          provider: "sarvam",
-          engineName: "Sarvam AI (Saaras Indic ASR)",
-          detectedLanguage: "te",
-          segments: chunkSegmentsToFourFiveWords(sarvamResult)
-        };
-      }
-    } catch (err) {
-      console.warn("Sarvam AI transcription failed, attempting fallback:", err.message);
-    }
-  }
-
-  // 4. Try OpenAI Whisper
-  if (hasOpenAI) {
-    try {
-      const openaiResult = await transcribeWithOpenAI(audioData, language);
-      if (openaiResult && openaiResult.segments && openaiResult.segments.length > 0) {
-        return {
-          ok: true,
-          provider: "openai",
-          engineName: "OpenAI Whisper-1",
-          detectedLanguage: openaiResult.detectedLanguage,
-          segments: chunkSegmentsToFourFiveWords(openaiResult.segments)
-        };
-      }
-    } catch (err) {
-      console.warn("OpenAI Whisper transcription failed:", err.message);
-    }
-  }
-
-  // 5. Intelligent Offline Telugu Simulation Fallback Engine (Covers FULL durationSec)
-  const simulatedSegments = chunkSegmentsToFourFiveWords(generateTeluguSimulation(durationSec));
-  return {
-    ok: true,
-    provider: "simulated-engine",
-    engineName: "Offline Telugu Engine (Simulated)",
-    note: "Configure GROQ_API_KEY or SARVAM_API_KEY in .env.local to transcribe speech live from your cloud AI provider.",
-    segments: simulatedSegments
+  const providers = {
+    gemini: {
+      configured: Boolean(process.env.GEMINI_API_KEY?.trim()),
+      name: "Google Gemini 2.5 Flash",
+      transcribe: () =>
+        transcribeWithGemini(audioData, language, durationSec),
+    },
+    groq: {
+      configured: Boolean(process.env.GROQ_API_KEY?.trim()),
+      name: "Groq Whisper",
+      transcribe: () => transcribeWithGroq(audioData, language),
+    },
+    sarvam: {
+      configured: Boolean(process.env.SARVAM_API_KEY?.trim()),
+      name: "Sarvam AI Saaras",
+      transcribe: () => transcribeWithSarvam(audioData, language),
+    },
+    openai: {
+      configured: Boolean(process.env.OPENAI_API_KEY?.trim()),
+      name: "OpenAI Whisper",
+      transcribe: () => transcribeWithOpenAI(audioData, language),
+    },
   };
+
+  const providerOrder = [
+    ...(providers[preferred] ? [preferred] : []),
+    ...Object.keys(providers).filter(
+      (name) => name !== preferred
+    ),
+  ].filter(
+    (name, index, list) =>
+      providers[name].configured && list.indexOf(name) === index
+  );
+
+  if (providerOrder.length === 0) {
+    throw new Error(
+      "No transcription API key is configured. " +
+      "Add a valid GEMINI_API_KEY, GROQ_API_KEY, " +
+      "SARVAM_API_KEY, or OPENAI_API_KEY to .env.local."
+    );
+  }
+
+  const errors = [];
+
+  for (const provider of providerOrder) {
+    try {
+      const result = await providers[provider].transcribe();
+
+      // Sarvam returns an array; other providers return an object.
+      const rawSegments = Array.isArray(result)
+        ? result
+        : result?.segments;
+
+      if (!Array.isArray(rawSegments) || rawSegments.length === 0) {
+        throw new Error("The provider returned no transcript segments.");
+      }
+
+      const segments = chunkSegmentsToFourFiveWords(rawSegments);
+
+      if (!Array.isArray(segments) || segments.length === 0) {
+        throw new Error("No valid caption segments were generated.");
+      }
+
+      console.info(`Transcription succeeded: ${provider}`);
+
+      return {
+        ok: true,
+        provider,
+        engineName: providers[provider].name,
+        detectedLanguage: Array.isArray(result)
+          ? language || "auto"
+          : result.detectedLanguage || language || "auto",
+        ...(Array.isArray(result) || !result.songTitle
+          ? {}
+          : { songTitle: result.songTitle }),
+        segments,
+      };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : String(error);
+
+      console.error(`${provider} transcription failed: ${message}`);
+      errors.push(`${provider}: ${message}`);
+    }
+  }
+
+  // Do not return generated sample captions as real transcription.
+  throw new Error(
+    "All configured transcription providers failed. " +
+    "Check your API keys, provider quotas, audio extraction, " +
+    "and server logs. Details: " + errors.join(" | ")
+  );
 }
+
 
 /**
  * Transcribe using Groq Whisper Large v3 Turbo
