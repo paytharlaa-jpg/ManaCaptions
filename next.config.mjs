@@ -1,3 +1,4 @@
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   allowedDevOrigins: [
@@ -27,7 +28,17 @@ const nextConfig = {
     "localhost:3000",
     "10.50.186.4",
     "10.50.186.4:3000"
-  ]
+  ],
+
+  // Keep ffmpeg-static external to the server bundle.
+  serverExternalPackages: ["ffmpeg-static"],
+
+  // Include ffmpeg-static package files in the transcription route.
+  outputFileTracingIncludes: {
+    "/api/transcribe": [
+      "./node_modules/ffmpeg-static/**/*"
+    ]
+  }
 };
 
 export default nextConfig;
