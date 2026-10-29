@@ -206,7 +206,7 @@ export default function PricingPage() {
     },
     {
       q: "How are credits calculated per video?",
-      a: "1 credit is charged to generate captions for your video. You can download SRT/VTT subtitle files and edit them manually with zero extra charge! If you want to export and download the final captioned MP4 video, 1 more credit is charged."
+      a: "Credits are charged based on video duration at a rate of 1 credit per minute of video (rounded up). Downloading SRT/VTT subtitle files is completely free! Exporting the final burned-in MP4 video is also charged at 1 credit per minute."
     },
     {
       q: "What payment methods are supported?",

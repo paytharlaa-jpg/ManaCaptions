@@ -25,12 +25,17 @@ export default function ExportModal({
   videoSrc,
   currentFile = null,
   styleConfig,
-  filename = "telugu_reel"
+  filename = "telugu_reel",
+duration = 0
 }) {
   const { user, updateCreditsBalance } = useAuth();
   const [costModalOpen, setCostModalOpen] = useState(false);
   const [guestAuthOpen, setGuestAuthOpen] = useState(false);
   const [guestAction, setGuestAction] = useState("download_video");
+
+  const lastSegEnd = segments && segments.length > 0 ? (segments[segments.length - 1]?.end || 0) : 0;
+  const effectiveDuration = duration > 0 ? duration : (lastSegEnd > 0 ? lastSegEnd : 30);
+  const exportCost = PRICING_RULES.calculateExportCost(effectiveDuration);
 
   const cleanInitialBase = (filename || "telugu_reel")
     .replace(/\.[^/.]+$/, "")
@@ -147,7 +152,11 @@ export default function ExportModal({
       setGuestAuthOpen(true);
       return;
     }
-    setCostModalOpen(true);
+    if (exportCost > 0) {
+      setCostModalOpen(true);
+    } else {
+      renderBurnedVideo();
+    }
   };
 
   // Copy full script to clipboard for Instagram post captions
@@ -215,6 +224,7 @@ export default function ExportModal({
         const sendFilename = currentFile?.name || (filename ? `${filename}.mp4` : "video.mp4");
         formData.append("video", videoBlob, sendFilename);
         formData.append("filename", exportName || "telugu_reel");
+        formData.append("duration", effectiveDuration);
         formData.append("subtitlesAss", assSubtitles);
 
         const res = await fetch("/api/export", {
@@ -374,6 +384,7 @@ export default function ExportModal({
           const formData = new FormData();
           formData.append("video", rawBlob, "recorded.webm");
           formData.append("filename", exportName || "telugu_reel");
+          formData.append("duration", effectiveDuration);
 
           const res = await fetch("/api/export", {
             method: "POST",
@@ -644,9 +655,9 @@ export default function ExportModal({
             </p>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#BB232B]/20 text-[#F8F3F0] border border-[#BB232B]/40 font-bold flex items-center gap-1">
-              <Zap className="w-3 h-3 fill-[#BB232B] text-[#BB232B]" />
-              <span>1 Credit</span>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1">
+              <Zap className="w-3 h-3 fill-emerald-400 text-emerald-400" />
+              <span>{exportCost > 0 ? `${exportCost} ${exportCost === 1 ? 'Credit' : 'Credits'}` : "Free Export"}</span>
             </span>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#20309A]/30 text-[#F8F3F0] border border-[#20309A]/50 font-bold">
               H.264 / AAC MP4
@@ -898,7 +909,8 @@ export default function ExportModal({
           renderBurnedVideo();
         }}
         actionTitle="Export Burned-In MP4 Video"
-        cost={PRICING_RULES.calculateExportCost()}
+        cost={exportCost}
+        durationSec={effectiveDuration}
         currentBalance={user?.credits_balance ?? 10}
       />
 

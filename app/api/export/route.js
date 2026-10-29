@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 import { spawn, spawnSync } from "child_process";
 import ffmpegPath from "ffmpeg-static";
 import fs from "fs/promises";
@@ -105,33 +106,45 @@ export async function POST(request) {
         );
       }
 
-      const cost = PRICING_RULES.calculateExportCost();
+      const formData = await request.formData();
+      const videoFile = formData.get("video") || formData.get("file");
+      const filename = formData.get("filename") || "telugu_reel";
+      const durationSec = Number(formData.get("duration")) || 30;
+
+      const cost = PRICING_RULES.calculateExportCost(durationSec);
       let jobId = null;
       let deduction = null;
-      try {
+      if (cost > 0) {
+        try {
+          jobId = createJob({
+            userId: user.id,
+            jobType: "export",
+            videoDurationSec: durationSec,
+            creditsCost: cost
+          });
+          deduction = deductCreditsAtomically(user.id, cost, "job", jobId);
+        } catch (creditErr) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: creditErr.message || "Insufficient credits",
+              code: "INSUFFICIENT_CREDITS",
+              cost,
+              currentBalance: user.credits_balance
+            },
+            { status: 402 }
+          );
+        }
+      } else {
         jobId = createJob({
           userId: user.id,
           jobType: "export",
-          creditsCost: cost
+          videoDurationSec: durationSec,
+          creditsCost: 0
         });
-        deduction = deductCreditsAtomically(user.id, cost, "job", jobId);
-      } catch (creditErr) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: creditErr.message || "Insufficient credits",
-            code: "INSUFFICIENT_CREDITS",
-            cost,
-            currentBalance: user.credits_balance
-          },
-          { status: 402 }
-        );
       }
 
       try {
-        const formData = await request.formData();
-        const videoFile = formData.get("video") || formData.get("file");
-        const filename = formData.get("filename") || "telugu_reel";
 
         if (!videoFile) {
           throw new Error("No video provided for export");

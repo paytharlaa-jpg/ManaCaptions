@@ -72,7 +72,7 @@ export default function TermsOfServicePage() {
             </p>
             <ul className="list-disc list-inside space-y-1.5 pl-2 text-[#F8F3F0]/65">
               <li><strong>Signup Bonus:</strong> Each verified user account receives 10 promotional credits upon initial registration.</li>
-              <li><strong>Credit Usage:</strong> Credits are deducted based on video duration (1 credit per minute of speech transcription) and export operations (1 credit per burned-in video export).</li>
+              <li><strong>Credit Usage:</strong> Credits are deducted based on video duration: 1 credit per minute of speech transcription (rounded up) and 1 credit per minute of burned-in video export (rounded up). Subtitle downloads (SRT/VTT) are completely free.</li>
               <li><strong>Expiration:</strong> Purchased credits do not expire as long as your account remains in good standing.</li>
               <li><strong>Non-Transferable:</strong> Credits are non-transferable between separate accounts.</li>
             </ul>

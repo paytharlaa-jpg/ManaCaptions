@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 import { teluguToRomanized, romanizedToTelugu } from "@/lib/transliterate";
 import { getAuthenticatedUser, getGuestSession, verifyTurnstileToken } from "@/lib/authServer";
 import { PRICING_RULES } from "@/config/pricing";
@@ -127,6 +128,22 @@ export async function POST(request) {
     if (!file) {
       return NextResponse.json(
         { ok: false, error: "No video or audio file provided" },
+        { status: 400 }
+      );
+    }
+
+    // Enforce 2-minute duration limit (with 10s grace buffer for rounding)
+    if (durationSec > 130) {
+      return NextResponse.json(
+        { ok: false, error: "ManaCaptions is designed for Reels & Shorts up to 2 minutes (120 seconds). Please trim your video.", code: "VIDEO_TOO_LONG" },
+        { status: 400 }
+      );
+    }
+
+    // Enforce 100MB file limit
+    if (file.size > 105 * 1024 * 1024) {
+      return NextResponse.json(
+        { ok: false, error: "File exceeds the 100MB limit. Please compress or trim your video.", code: "FILE_TOO_LARGE" },
         { status: 400 }
       );
     }
@@ -367,11 +384,11 @@ async function extractAudioFromFile(file) {
         "-ac", "1",
         "-ar", "16000",
         "-b:a", "64k",
-        "-f", "mp3",
+"-f", "mp3",
         outputPath,
       ],
       {
-        timeout: 35000,
+        timeout: 60000,
         encoding: "utf8",
         windowsHide: true,
         maxBuffer: 1024 * 1024,
@@ -574,6 +591,29 @@ async function transcribeWithGroq(audioData, language = "te") {
  * Transcribe using Google Gemini 2.5 Flash Multimodal Audio Engine.
  * Understands song lyrics, music tracks, background vocals, and code-mixed Telugu/English.
  */
+
+/**
+ * Safely recovers truncated JSON by scanning backwards for the last valid segment
+ */
+function safeRecoverJson(rawText) {
+  if (!rawText) return null;
+  const clean = rawText.trim();
+  const lastSegEnd = clean.lastIndexOf("}");
+  if (lastSegEnd > 0) {
+    const candidate = clean.slice(0, lastSegEnd + 1);
+    const closers = ["]}", "\"]}", "}]}", "\"}]}", "\"}]}}"];
+    for (const closer of closers) {
+      try {
+        const testObj = JSON.parse(candidate + closer);
+        if (testObj && testObj.segments && Array.isArray(testObj.segments)) {
+          return testObj;
+        }
+      } catch {}
+    }
+  }
+  return null;
+}
+
 async function transcribeWithGemini(audioData, language = "auto", durationSec = 30) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
@@ -627,7 +667,8 @@ Return ONLY a valid JSON object matching this schema:
   ]
 }`;
 
-  const modelsToTry = ["gemini-2.5-flash", "gemini-3.1-flash-lite"];
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite"];
+  const timeoutMs = Math.max(120000, Math.ceil(roundedDuration * 2000));
   let lastError = null;
 
   for (const model of modelsToTry) {
@@ -636,7 +677,7 @@ Return ONLY a valid JSON object matching this schema:
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           method: "POST",
-          signal: AbortSignal.timeout(35000),
+          signal: AbortSignal.timeout(timeoutMs),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [
@@ -654,7 +695,7 @@ Return ONLY a valid JSON object matching this schema:
             ],
             generationConfig: {
               responseMimeType: "application/json",
-              maxOutputTokens: 8192,
+              maxOutputTokens: 65536,
               temperature: 0.1
             }
           })
@@ -670,7 +711,13 @@ Return ONLY a valid JSON object matching this schema:
       const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!rawText) throw new Error("No response content from Gemini");
 
-      const parsed = JSON.parse(rawText);
+      let parsed;
+      try {
+        parsed = JSON.parse(rawText);
+      } catch (parseErr) {
+        parsed = safeRecoverJson(rawText);
+        if (!parsed) throw parseErr;
+      }
       if (parsed.segments && Array.isArray(parsed.segments) && parsed.segments.length > 0) {
         let segs = parsed.segments.map((s, idx) => ({
           id: s.id || `seg-${idx + 1}`,
@@ -694,9 +741,9 @@ Return ONLY a valid JSON object matching this schema:
           })
         }));
 
-        // Truncation check: If clip is >= 20s and last segment stops prematurely (e.g. at 14s for a 55s video)
+        // Truncation check: Only flag if ended extremely prematurely (<40% of duration) and few segments
         const lastEnd = segs[segs.length - 1]?.end || 0;
-        if (durationSec >= 20 && lastEnd < durationSec * 0.70) {
+        if (durationSec >= 30 && lastEnd < durationSec * 0.40 && segs.length < Math.max(5, durationSec / 10)) {
           const truncErr = new Error(`Gemini cut off early at ${lastEnd.toFixed(1)}s for a ${durationSec}s video`);
           truncErr.isEarlyTruncation = true;
           throw truncErr;
@@ -958,49 +1005,103 @@ async function ensureDualScriptNative(segments) {
   }
 
   const groqKey = process.env.GROQ_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
   const conversionMap = new Map();
 
-  if (groqKey) {
+  // Try Gemini first for dual-script conversion (vastly superior Telugu translation)
+  if (geminiKey) {
     try {
       const inputLines = nonTeluguSegments.map(s => ({
         id: s.id,
         text: s.romanizedText || s.text
       }));
 
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        signal: AbortSignal.timeout(8000),
-        headers: {
-          Authorization: `Bearer ${groqKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "openai/gpt-oss-20b",
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: 'You are a professional Telugu reel subtitle converter. Convert the provided subtitle lines into natural, direct native Telugu language style (తెలుగు లిపి). CRITICAL: Do NOT analyze meaning, do NOT add extra words, do NOT summarize or rephrase. Give crisp, direct native Telugu captions matching each line. Return JSON: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}'
-            },
-            {
-              role: "user",
-              content: JSON.stringify(inputLines)
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          signal: AbortSignal.timeout(30000),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `You are a Telugu subtitle translator for reels and movies. Convert these subtitle lines into natural, authentic native Telugu language style (తెలుగు లిపి). Return ONLY a JSON object: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}.\nLines to convert:\n${JSON.stringify(inputLines)}`
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.1
             }
-          ]
-        })
-      });
+          })
+        }
+      );
 
       if (res.ok) {
-        const data = await res.json();
-        const content = data?.choices?.[0]?.message?.content;
-        if (content) {
-          const parsed = JSON.parse(content);
+        const d = await res.json();
+        const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (raw) {
+          const parsed = JSON.parse(raw);
           if (parsed.segments && Array.isArray(parsed.segments)) {
             parsed.segments.forEach(item => {
               if (item.id && item.text) {
                 conversionMap.set(item.id, item.text);
               }
             });
+          }
+        }
+      }
+    } catch (gErr) {
+      console.warn("Gemini native Telugu conversion fallback error:", gErr.message);
+    }
+  }
+
+  // Fallback to Groq if Gemini wasn't used or some lines missing
+  if (groqKey && conversionMap.size < nonTeluguSegments.length) {
+    try {
+      const remainingLines = nonTeluguSegments.filter(s => !conversionMap.has(s.id)).map(s => ({
+        id: s.id,
+        text: s.romanizedText || s.text
+      }));
+      if (remainingLines.length > 0) {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          signal: AbortSignal.timeout(45000),
+          headers: {
+            Authorization: `Bearer ${groqKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "openai/gpt-oss-20b",
+            response_format: { type: "json_object" },
+            messages: [
+              {
+                role: "system",
+                content: 'You are a professional Telugu reel subtitle converter. Convert the provided subtitle lines into natural, direct native Telugu language style (తెలుగు లిపి). CRITICAL: Do NOT analyze meaning, do NOT add extra words, do NOT summarize or rephrase. Give crisp, direct native Telugu captions matching each line. Return JSON: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}'
+              },
+              {
+                role: "user",
+                content: JSON.stringify(remainingLines)
+              }
+            ]
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const content = data?.choices?.[0]?.message?.content;
+          if (content) {
+            const parsed = JSON.parse(content);
+            if (parsed.segments && Array.isArray(parsed.segments)) {
+              parsed.segments.forEach(item => {
+                if (item.id && item.text) {
+                  conversionMap.set(item.id, item.text);
+                }
+              });
+            }
           }
         }
       }

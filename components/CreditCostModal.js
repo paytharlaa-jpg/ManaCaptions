@@ -57,7 +57,7 @@ export default function CreditCostModal({
             <div className="flex items-center justify-between text-xs text-[#F8F3F0]/60 pb-2 border-b border-[#20309A]/20">
               <span>Video Duration</span>
               <span className="font-mono text-[#F8F3F0] font-semibold">
-                {formatDuration(durationSec)} (1 credit flat)
+                {formatDuration(durationSec)} ({cost} {cost === 1 ? "credit" : "credits"} • 1 credit/min)
               </span>
             </div>
           ) : null}

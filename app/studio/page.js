@@ -1,5 +1,7 @@
 "use client";
 
+import { extractAudioInBrowser } from "@/lib/audioExtractor";
+
 import React, { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import UploadDropzone from "@/components/UploadDropzone";
@@ -14,6 +16,29 @@ import { SAMPLE_PROJECT } from "@/lib/sampleDemo";
 import { chunkSegmentsToFourFiveWords } from "@/lib/captionPacing";
 import { PRICING_RULES } from "@/config/pricing";
 import { useAuth } from "@/lib/authContext";
+
+
+async function parseApiResponse(res) {
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return await res.json();
+  }
+  const text = await res.text();
+  if (res.status === 413) {
+    throw new Error('Video file is too large for the server (HTTP 413 Request Entity Too Large). Please increase upload limits on Hostinger.');
+  }
+  if (res.status === 504 || res.status === 502) {
+    throw new Error('Server timeout or gateway error (HTTP ' + res.status + '). Video processing took too long.');
+  }
+  if (res.status === 500) {
+    throw new Error('Internal Server Error (HTTP 500). Please check your Hostinger server logs.');
+  }
+  const titleMatch = text.match(/<title>([^<]+)<\/title>/i);
+  if (titleMatch) {
+    throw new Error('Server error (' + res.status + '): ' + titleMatch[1]);
+  }
+  throw new Error('Server returned an invalid response (HTTP ' + res.status + ')');
+}
 
 export default function StudioApp() {
   // Video and project state
@@ -99,7 +124,19 @@ export default function StudioApp() {
     try {
       const targetLang = lang || "auto";
       const formData = new FormData();
-      formData.append("file", file);
+
+      // Extract lightweight audio track in-browser to bypass Hostinger 413 / timeout limits
+      let uploadFile = file;
+      try {
+        const extracted = await extractAudioInBrowser(file);
+        if (extracted) {
+          uploadFile = extracted;
+        }
+      } catch (extractErr) {
+        console.warn("Client audio extraction fallback:", extractErr);
+      }
+
+      formData.append("file", uploadFile);
       formData.append("language", targetLang);
       formData.append("duration", String(durationSec));
 
@@ -112,7 +149,7 @@ export default function StudioApp() {
         body: formData
       });
 
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (data.ok && data.segments && data.segments.length > 0) {
         const paced = chunkSegmentsToFourFiveWords(data.segments);
         setSegments(paced);
@@ -145,10 +182,10 @@ export default function StudioApp() {
 
   // Handle User Uploaded File with selected language: inspect duration & prompt confirmation
   const handleFileSelected = (file, lang = selectedLanguage) => {
-    // 1. Check file size
-    const maxSizeBytes = PRICING_RULES.GUEST_TRIAL_LIMITS.MAX_FILE_SIZE_MB * 1024 * 1024;
-    if (!user && file.size > maxSizeBytes) {
-      alert(`File size exceeds the ${PRICING_RULES.GUEST_TRIAL_LIMITS.MAX_FILE_SIZE_MB}MB free guest trial limit. Sign in to process larger files!`);
+    // 1. Check file size (100MB limit)
+    const maxSizeBytes = 100 * 1024 * 1024;
+    if (file.size > maxSizeBytes) {
+      alert("Video file exceeds the 100MB limit. Please compress or trim your video.");
       return;
     }
 
@@ -163,9 +200,10 @@ export default function StudioApp() {
       triggered = true;
       const validDur = Math.max(1, Math.ceil(dur || 30));
 
-      // 2. Check 2-minute video limit for guest trials
-      if (!user && validDur > PRICING_RULES.GUEST_TRIAL_LIMITS.MAX_VIDEO_DURATION_SEC) {
-        alert("Free guest trials are limited to 2 minutes maximum. Sign in to process longer videos!");
+      // 2. Check 2-minute video limit (120 seconds max)
+      if (validDur > 120) {
+        alert("ManaCaptions is designed for Reels & Shorts up to 2 minutes (120 seconds). Please trim your video to continue.");
+        URL.revokeObjectURL(objectUrl);
         return;
       }
 
@@ -175,7 +213,7 @@ export default function StudioApp() {
         return;
       }
 
-      // Logged-in user: show credit cost modal
+      // Logged-in user: calculate credit cost (1 credit <= 60s, 2 credits <= 120s)
       const cost = PRICING_RULES.calculateCaptionCost(validDur);
       setPendingAction({
         file,
@@ -200,7 +238,7 @@ export default function StudioApp() {
       if (!triggered) {
         triggerProcess(30);
       }
-    }, 1200);
+    }, 1500);
   };
 
   // Execute transcription after user confirms credit cost
@@ -241,20 +279,31 @@ export default function StudioApp() {
       formData.append("language", lang || "auto");
       formData.append("duration", String(durationSec || duration || 30));
 
-      if (currentFile) {
-        formData.append("file", currentFile);
-      } else {
+      let sourceFile = currentFile;
+      if (!sourceFile) {
         const vRes = await fetch(videoSrc);
         const blob = await vRes.blob();
-        formData.append("file", blob, videoFilename);
+        sourceFile = new File([blob], videoFilename || "video.mp4", { type: blob.type || "video/mp4" });
       }
+
+      let uploadFile = sourceFile;
+      try {
+        const extracted = await extractAudioInBrowser(sourceFile);
+        if (extracted) {
+          uploadFile = extracted;
+        }
+      } catch (extractErr) {
+        console.warn("Client audio extraction fallback:", extractErr);
+      }
+
+      formData.append("file", uploadFile);
 
       const res = await fetch("/api/transcribe", {
         method: "POST",
         body: formData
       });
 
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (data.ok && data.segments && data.segments.length > 0) {
         const paced = chunkSegmentsToFourFiveWords(data.segments);
         setSegments(paced);
@@ -365,6 +414,7 @@ export default function StudioApp() {
                   currentFile={currentFile}
                   styleConfig={styleConfig}
                   filename={videoFilename}
+                  duration={duration}
                 />
               )}
             </div>

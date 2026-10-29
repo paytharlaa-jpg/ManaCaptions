@@ -189,7 +189,7 @@ export default function UploadDropzone({
             {isTranscribing ? "Transcribing Telugu Speech..." : "Drop your Reel or Short here"}
           </h3>
           <p className="text-xs sm:text-sm text-[#F8F3F0]/60 max-w-sm mb-5">
-            Supports MP4, MOV, WebM, MKV · Automatically generates Dual-Script captions
+            Supports MP4, MOV, WebM (up to 2 mins &amp; 100MB) · Dual-Script captions
           </p>
 
           {turnstileSiteKey && (
