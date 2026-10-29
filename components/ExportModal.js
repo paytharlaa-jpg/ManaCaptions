@@ -1,5 +1,7 @@
 "use client";
 
+import { fixWebmDuration } from "@/lib/webmFixer";
+
 import React, { useState } from "react";
 import {
   Download,
@@ -169,13 +171,16 @@ duration = 0
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Render Burned-In MP4 Video (Direct Hardware ASS Burn on Server + Client Fallback)
+  // Render Burned-In MP4 Video (Direct Hardware ASS Burn on Server with Chunked Upload + Client Fallback)
   const renderBurnedVideo = async () => {
     if (!videoSrc) return;
     setIsExportingVideo(true);
-    setExportProgress(15);
-    setExportStatusText("Preparing pristine source video...");
+    setExportProgress(5);
+    setExportStatusText("Preparing source video...");
     setExportedVideoUrl(null);
+    setServerDownloadUrl(null);
+
+    let tempVideo = null;
 
     try {
       // 1. Obtain pristine source video Blob
@@ -190,10 +195,10 @@ duration = 0
       }
 
       // 2. Measure native resolution
-      setExportProgress(35);
-      setExportStatusText("Generating synchronized subtitle styling...");
+      setExportProgress(10);
+      setExportStatusText("Measuring resolution & subtitle alignment...");
 
-      const tempVideo = document.createElement("video");
+      tempVideo = document.createElement("video");
       tempVideo.src = videoSrc;
       tempVideo.preload = "metadata";
       await new Promise((resolve) => {
@@ -215,61 +220,110 @@ duration = 0
         videoHeight
       });
 
-      // 4. Primary Route: Direct High-Speed Server-Side FFmpeg Subtitle Burn
+      // 4. Primary Route: Server-Side FFmpeg Subtitle Burn with Chunked Upload
+      // Slices video into 3MB chunks to bypass Hostinger LiteSpeed payload limit (100% reliable!)
       if (videoBlob) {
-        setExportProgress(65);
-        setExportStatusText("Burning styled captions directly into video frames...");
+        const CHUNK_SIZE = 3 * 1024 * 1024; // 3MB chunks
+        const totalSize = videoBlob.size;
+        const totalChunks = Math.max(1, Math.ceil(totalSize / CHUNK_SIZE));
+        const uploadId = `mana_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-        const formData = new FormData();
-        const sendFilename = currentFile?.name || (filename ? `${filename}.mp4` : "video.mp4");
-        formData.append("video", videoBlob, sendFilename);
-        formData.append("filename", exportName || "telugu_reel");
-        formData.append("duration", effectiveDuration);
-        formData.append("subtitlesAss", assSubtitles);
+        let exportData = null;
 
-        const res = await fetch("/api/export", {
-          method: "POST",
-          body: formData
-        });
+        for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+          const start = chunkIdx * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, totalSize);
+          const chunkBlob = videoBlob.slice(start, end);
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data.ok && data.downloadUrl) {
-            setServerDownloadUrl(data.downloadUrl);
-            const cleanBase = (exportName || filename || "video")
-              .replace(/\.[^/.]+$/, "")
-              .replace(/_manacaption$/i, "")
-              .replace(/_captioned$/i, "")
-              .replace(/[^a-zA-Z0-9_-]/g, "_") || "video";
-            setDownloadFilename(data.filename || `${cleanBase}_manacaption.mp4`);
-            setExportedVideoUrl(data.downloadUrl);
-            setIsMp4Format(true);
-            setExportProgress(100);
+          const formData = new FormData();
+          formData.append("chunk", chunkBlob, `part_${chunkIdx}.mp4`);
+          formData.append("chunkIndex", String(chunkIdx));
+          formData.append("totalChunks", String(totalChunks));
+          formData.append("uploadId", uploadId);
+          formData.append("filename", exportName || filename || "telugu_reel");
+          formData.append("duration", String(effectiveDuration));
+
+          if (chunkIdx === totalChunks - 1) {
+            formData.append("subtitlesAss", assSubtitles);
+          }
+
+          // Upload progress from 10% to 60%
+          const uploadPct = 10 + Math.round(((chunkIdx + 1) / totalChunks) * 50);
+          setExportProgress(uploadPct);
+          if (totalChunks > 1) {
+            setExportStatusText(`Uploading video chunk ${chunkIdx + 1}/${totalChunks} (${Math.round(((chunkIdx + 1) / totalChunks) * 100)}%)...`);
+          } else {
+            setExportStatusText("Sending video to high-speed render engine...");
+          }
+
+          const res = await fetch("/api/export", {
+            method: "POST",
+            body: formData
+          });
+
+          if (res.status === 401) {
             setIsExportingVideo(false);
-            setExportStatusText("Universal MP4 video rendered and ready!");
-            if (data.creditsRemaining !== undefined && updateCreditsBalance) {
-              updateCreditsBalance(data.creditsRemaining);
-            }
+            setGuestAction("download_video");
+            setGuestAuthOpen(true);
             return;
           }
-        } else if (res.status === 401) {
+
+          if (!res.ok) {
+            let errMsg = `Server returned HTTP ${res.status}`;
+            try {
+              const errJson = await res.json();
+              if (errJson.error) errMsg = errJson.error;
+            } catch {}
+            throw new Error(errMsg);
+          }
+
+          if (chunkIdx === totalChunks - 1) {
+            setExportProgress(75);
+            setExportStatusText("Burning styled captions into video frames with FFmpeg...");
+            exportData = await res.json();
+          }
+        }
+
+        if (exportData && exportData.ok && exportData.downloadUrl) {
+          setServerDownloadUrl(exportData.downloadUrl);
+          const cleanBase = (exportName || filename || "video")
+            .replace(/\.[^/.]+$/, "")
+            .replace(/_manacaption$/i, "")
+            .replace(/_captioned$/i, "")
+            .replace(/[^a-zA-Z0-9_-]/g, "_") || "video";
+          const finalDlName = exportData.filename || `${cleanBase}_manacaption.mp4`;
+          setDownloadFilename(finalDlName);
+          setExportedVideoUrl(exportData.downloadUrl);
+          setIsMp4Format(true);
+          setExportProgress(100);
           setIsExportingVideo(false);
-          setGuestAction("download_video");
-          setGuestAuthOpen(true);
+          setExportStatusText("Universal MP4 video rendered and ready!");
+          if (exportData.creditsRemaining !== undefined && updateCreditsBalance) {
+            updateCreditsBalance(exportData.creditsRemaining);
+          }
           return;
-        } else {
-          console.warn("Direct server burn returned non-ok, falling back to client canvas...");
         }
       }
 
-      // 5. Fallback Route: Client Canvas Compositor (if direct server burn is unavailable)
-      await runClientCanvasFallback(tempVideo);
+      // If videoBlob was not available, fall back to client canvas
+      console.warn("Direct server burn unavailable, falling back to client canvas...");
+      await runClientCanvasFallback(tempVideo || document.createElement("video"));
 
     } catch (err) {
-      console.error("Video export error:", err);
-      setIsExportingVideo(false);
-      setExportProgress(0);
-      alert("Video export encountered an error: " + err.message);
+      console.warn("Server FFmpeg burn failed, falling back to client hardware canvas:", err.message);
+      setExportStatusText("Switching to device hardware rendering...");
+      try {
+        if (!tempVideo) {
+          tempVideo = document.createElement("video");
+          tempVideo.src = videoSrc;
+        }
+        await runClientCanvasFallback(tempVideo);
+      } catch (fallbackErr) {
+        console.error("Video export error:", fallbackErr);
+        setIsExportingVideo(false);
+        setExportProgress(0);
+        alert("Video export encountered an error: " + (fallbackErr.message || fallbackErr));
+      }
     }
   };
 
@@ -290,11 +344,11 @@ duration = 0
       video.style.position = "fixed";
       video.style.top = "0";
       video.style.left = "0";
-      video.style.width = "320px";
-      video.style.height = "568px";
-      video.style.opacity = "0.002"; // Active in viewport = 100% GPU priority (no 1fps throttle!)
+      video.style.width = "200px";
+      video.style.height = "200px";
+      video.style.opacity = "0.01";
       video.style.pointerEvents = "none";
-      video.style.zIndex = "-1";
+      video.style.zIndex = "999999"; // Top of screen = 100% active foreground GPU priority!
 
       if (!video.parentNode && typeof document !== "undefined") {
         document.body.appendChild(video);
@@ -306,7 +360,7 @@ duration = 0
         setTimeout(resolve, 2000);
       });
 
-      // Target clean standard resolution (max 1080p, optimal 720p for silky performance)
+      // Connect to the live visible canvas in the modal (or create fallback)
       let targetW = video.videoWidth || 720;
       let targetH = video.videoHeight || 1280;
       if (targetW > 1080 || targetH > 1920) {
@@ -317,7 +371,10 @@ duration = 0
       if (targetW % 2 !== 0) targetW--;
       if (targetH % 2 !== 0) targetH--;
 
-      const canvas = document.createElement("canvas");
+      let canvas = document.getElementById("mana-live-render-canvas");
+      if (!canvas) {
+        canvas = document.createElement("canvas");
+      }
       const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
       canvas.width = targetW;
       canvas.height = targetH;
@@ -356,15 +413,13 @@ duration = 0
       if (audioTrack) combinedTracks.push(audioTrack);
       const combinedStream = new MediaStream(combinedTracks);
 
-      // Prioritize MP4 container if browser supports it
+      // In browser fallback, prefer WebM because fixWebmDuration injects precise duration & seek headers
       const candidateMimes = [
-        "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
-        "video/mp4;codecs=avc1",
-        "video/mp4",
-        "video/webm;codecs=h264,opus",
         "video/webm;codecs=vp9,opus",
         "video/webm;codecs=vp8,opus",
-        "video/webm"
+        "video/webm",
+        "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+        "video/mp4"
       ];
 
       let selectedMime = "";
@@ -402,7 +457,7 @@ duration = 0
 
       video.onended = stopRecording;
 
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         if (audioCtx && audioCtx.state !== "closed") {
           audioCtx.close().catch(() => {});
         }
@@ -411,12 +466,23 @@ duration = 0
         }
 
         const recordedMime = mediaRecorder.mimeType || "video/webm";
-        const rawBlob = new Blob(chunks, { type: recordedMime });
+        let finalBlob = new Blob(chunks, { type: recordedMime });
 
-        if (rawBlob.size === 0) {
+        if (finalBlob.size === 0) {
           setIsExportingVideo(false);
           alert("Recording produced 0 frames. Please try again.");
           return;
+        }
+
+        // CRITICAL FIX: Patch missing EBML duration header
+        // Fixes "duration not moving even video plays" and seeking freeze!
+        if (recordedMime.includes("webm")) {
+          setExportStatusText("Syncing video duration & seek headers...");
+          try {
+            finalBlob = await fixWebmDuration(finalBlob, duration);
+          } catch (fixErr) {
+            console.warn("Could not patch WebM duration:", fixErr);
+          }
         }
 
         const cleanFallbackBase = (exportName || filename || "video")
@@ -428,7 +494,7 @@ duration = 0
         const isMp4 = recordedMime.includes("mp4");
         const ext = isMp4 ? ".mp4" : ".webm";
         const fallbackName = `${cleanFallbackBase}_manacaption${ext}`;
-        const downloadUrl = URL.createObjectURL(rawBlob);
+        const downloadUrl = URL.createObjectURL(finalBlob);
 
         setExportedVideoUrl(downloadUrl);
         setServerDownloadUrl(downloadUrl);
@@ -436,7 +502,7 @@ duration = 0
         setIsMp4Format(isMp4);
         setExportProgress(100);
         setIsExportingVideo(false);
-        setExportStatusText("Video rendered smoothly and ready to download!");
+        setExportStatusText("Video rendered with perfect duration & ready to download!");
       };
 
       // Start recording with 100ms slices for smooth memory streaming
@@ -685,9 +751,19 @@ duration = 0
           </div>
         </div>
 
-        {/* Export Progress Bar */}
+        {/* Export Progress Bar & Live Visual Canvas */}
         {isExportingVideo && (
-          <div className="space-y-1.5 py-2">
+          <div className="space-y-2.5 py-2">
+            {/* Visual Canvas: Visible in modal = 100% GPU priority from browser engine! */}
+            <div className="flex justify-center">
+              <div className="w-36 h-60 sm:w-44 sm:h-72 bg-black rounded-2xl overflow-hidden border border-[#20309A]/40 shadow-2xl relative flex items-center justify-center">
+                <canvas
+                  id="mana-live-render-canvas"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            </div>
+
             <div className="flex justify-between text-xs font-mono">
               <span className="text-[#BB232B] font-bold flex items-center gap-1.5">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-[#BB232B]" />

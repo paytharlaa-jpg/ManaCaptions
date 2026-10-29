@@ -13,25 +13,33 @@ import { PRICING_RULES } from "@/config/pricing";
 import { createJob, updateJobStatus, deductCreditsAtomically, refundCreditsAtomically } from "@/lib/db";
 
 function getFfmpegBinary() {
+  const binaryName = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  let chosenBinary = null;
+
   // Prefer the binary supplied by ffmpeg-static.
   if (typeof ffmpegPath === "string" && fsSync.existsSync(ffmpegPath)) {
-    return ffmpegPath;
-  }
-
-  if (
+    chosenBinary = ffmpegPath;
+  } else if (
     ffmpegPath?.default &&
     typeof ffmpegPath.default === "string" &&
     fsSync.existsSync(ffmpegPath.default)
   ) {
-    return ffmpegPath.default;
+    chosenBinary = ffmpegPath.default;
+  } else {
+    // Check the platform-specific package location.
+    const localBinary = path.join(process.cwd(), "node_modules", "ffmpeg-static", binaryName);
+    if (fsSync.existsSync(localBinary)) {
+      chosenBinary = localBinary;
+    }
   }
 
-  // Check the platform-specific package location.
-  const binaryName = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
-  const localBinary = path.join(process.cwd(), "node_modules", "ffmpeg-static", binaryName);
-
-  if (fsSync.existsSync(localBinary)) {
-    return localBinary;
+  if (chosenBinary) {
+    if (process.platform !== "win32") {
+      try {
+        fsSync.chmodSync(chosenBinary, 0o755);
+      } catch {}
+    }
+    return chosenBinary;
   }
 
   return "ffmpeg";
@@ -70,7 +78,7 @@ function toVttTime(sec) {
 }
 
 /**
- * GET: Direct, native browser download handler with explicit Content-Disposition filename
+ * GET: Direct, native browser download handler with explicit Content-Disposition filename & Range support
  */
 export async function GET(request) {
   try {
@@ -87,12 +95,39 @@ export async function GET(request) {
 
     const item = exportCache.get(id);
     const safeFilename = requestedName.endsWith(".mp4") ? requestedName : `${requestedName}.mp4`;
+    const totalLength = item.buffer.length;
+
+    // Support HTTP Range requests for instant in-browser playback & smooth seeking
+    const rangeHeader = request.headers.get("range");
+    if (rangeHeader && rangeHeader.startsWith("bytes=")) {
+      const parts = rangeHeader.replace("bytes=", "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : totalLength - 1;
+
+      if (!isNaN(start) && start < totalLength) {
+        const safeEnd = Math.min(end, totalLength - 1);
+        const chunk = item.buffer.subarray(start, safeEnd + 1);
+
+        return new NextResponse(chunk, {
+          status: 206,
+          headers: {
+            "Content-Range": `bytes ${start}-${safeEnd}/${totalLength}`,
+            "Accept-Ranges": "bytes",
+            "Content-Length": String(chunk.length),
+            "Content-Type": "video/mp4",
+            "Content-Disposition": `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`
+          }
+        });
+      }
+    }
 
     return new NextResponse(item.buffer, {
+      status: 200,
       headers: {
         "Content-Type": "video/mp4",
+        "Accept-Ranges": "bytes",
         "Content-Disposition": `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`,
-        "Content-Length": String(item.buffer.length),
+        "Content-Length": String(totalLength),
         "Cache-Control": "no-cache, no-store, must-revalidate"
       }
     });
@@ -119,10 +154,39 @@ export async function POST(request) {
       }
 
       const formData = await request.formData();
-      const videoFile = formData.get("video") || formData.get("file");
+      const videoChunk = formData.get("chunk") || formData.get("video") || formData.get("file");
       const filename = formData.get("filename") || "telugu_reel";
       const durationSec = Number(formData.get("duration")) || 30;
+      const chunkIndex = Number(formData.get("chunkIndex") ?? 0);
+      const totalChunks = Number(formData.get("totalChunks") ?? 1);
+      const uploadId = String(formData.get("uploadId") || crypto.randomBytes(8).toString("hex")).replace(/[^a-zA-Z0-9_-]/g, "");
 
+      if (!videoChunk) {
+        return NextResponse.json({ ok: false, error: "No video payload received" }, { status: 400 });
+      }
+
+      const tmpDir = os.tmpdir();
+      const partPath = path.join(tmpDir, `mana_up_${uploadId}.tmp`);
+
+      const chunkBuffer = Buffer.from(await videoChunk.arrayBuffer());
+
+      if (chunkIndex === 0) {
+        await fs.writeFile(partPath, chunkBuffer);
+      } else {
+        await fs.appendFile(partPath, chunkBuffer);
+      }
+
+      // If more chunks are expected, acknowledge this chunk and return immediately
+      if (chunkIndex < totalChunks - 1) {
+        return NextResponse.json({
+          ok: true,
+          status: "chunk_received",
+          chunkIndex,
+          totalChunks
+        });
+      }
+
+      // All chunks have arrived! Proceed to credit check and FFmpeg burn
       const cost = PRICING_RULES.calculateExportCost(durationSec);
       let jobId = null;
       let deduction = null;
@@ -136,6 +200,7 @@ export async function POST(request) {
           });
           deduction = deductCreditsAtomically(user.id, cost, "job", jobId);
         } catch (creditErr) {
+          await fs.unlink(partPath).catch(() => {});
           return NextResponse.json(
             {
               ok: false,
@@ -157,26 +222,14 @@ export async function POST(request) {
       }
 
       try {
-
-        if (!videoFile) {
-          throw new Error("No video provided for export");
-        }
-
-        const buffer = Buffer.from(await videoFile.arrayBuffer());
         const subtitlesAss = formData.get("subtitlesAss");
         const tempId = crypto.randomBytes(8).toString("hex");
-        const inputExt = videoFile.name?.endsWith(".mp4") ? ".mp4" : ".webm";
-        
-        const tmpDir = os.tmpdir();
-        const inputName = `tc_input_${tempId}${inputExt}`;
         const outputName = `tc_output_${tempId}.mp4`;
         const subsName = `tc_subs_${tempId}.ass`;
 
-        const inputPath = path.join(tmpDir, inputName);
         const outputPath = path.join(tmpDir, outputName);
         const subsPath = path.join(tmpDir, subsName);
 
-        await fs.writeFile(inputPath, buffer);
         if (subtitlesAss) {
           await fs.writeFile(subsPath, String(subtitlesAss), "utf8");
         }
@@ -187,7 +240,7 @@ export async function POST(request) {
         // Probe if input media stream includes audio
         let hasAudio = false;
         try {
-          const probe = spawnSync(ffmpegBinary, ["-i", inputPath]);
+          const probe = spawnSync(ffmpegBinary, ["-i", partPath]);
           const probeOutput = (probe.stderr ? probe.stderr.toString() : "") + (probe.stdout ? probe.stdout.toString() : "");
           hasAudio = probeOutput.includes("Audio:");
         } catch (probeErr) {
@@ -197,13 +250,16 @@ export async function POST(request) {
         await new Promise((resolve, reject) => {
           const ffmpegArgs = [
             "-y",
-            "-i", inputName
+            "-i", partPath
           ];
 
           // Hardcode/burn high-fidelity styled subtitles directly into video frames
+          // Ensure dimensions are divisible by 2 for H.264 compatibility
+          let vfFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
           if (subtitlesAss) {
-            ffmpegArgs.push("-vf", `ass=${subsName}`);
+            vfFilter += `,ass=${subsName}`;
           }
+          ffmpegArgs.push("-vf", vfFilter);
 
           ffmpegArgs.push(
             "-c:v", "libx264",
@@ -216,7 +272,7 @@ export async function POST(request) {
             ffmpegArgs.push("-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2");
           }
 
-          ffmpegArgs.push("-movflags", "+faststart", outputName);
+          ffmpegArgs.push("-movflags", "+faststart", outputPath);
 
           const proc = spawn(ffmpegBinary, ffmpegArgs, { cwd: tmpDir });
           let stderr = "";
@@ -229,7 +285,7 @@ export async function POST(request) {
               resolve();
             } else {
               console.error("FFmpeg transcode error details:", stderr);
-              reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-200)}`));
+              reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-300)}`));
             }
           });
 
@@ -241,7 +297,7 @@ export async function POST(request) {
         const mp4Buffer = await fs.readFile(outputPath);
 
         // Clean up temporary files
-        await fs.unlink(inputPath).catch(() => {});
+        await fs.unlink(partPath).catch(() => {});
         await fs.unlink(outputPath).catch(() => {});
         if (subtitlesAss) {
           await fs.unlink(subsPath).catch(() => {});
@@ -262,7 +318,7 @@ export async function POST(request) {
           timestamp: Date.now()
         });
 
-        updateJobStatus(jobId, "completed");
+        if (jobId) updateJobStatus(jobId, "completed");
 
         return NextResponse.json({
           ok: true,
@@ -270,14 +326,15 @@ export async function POST(request) {
           filename: safeFilename,
           downloadUrl: `/api/export?id=${fileId}&name=${encodeURIComponent(safeFilename)}`,
           creditsUsed: cost,
-          creditsRemaining: deduction.newBalance
+          creditsRemaining: deduction ? deduction.newBalance : user.credits_balance
         });
       } catch (err) {
+        await fs.unlink(partPath).catch(() => {});
         console.warn("Video export failed, refunding credits:", err.message);
-        refundCreditsAtomically(user.id, cost, "refund", jobId);
-        updateJobStatus(jobId, "failed", err.message);
+        if (cost > 0) refundCreditsAtomically(user.id, cost, "refund", jobId);
+        if (jobId) updateJobStatus(jobId, "failed", err.message);
         return NextResponse.json(
-          { ok: false, error: err.message || "Video export transcode failed. Credits refunded." },
+          { ok: false, error: err.message || "Video export transcode failed." },
           { status: 500 }
         );
       }
