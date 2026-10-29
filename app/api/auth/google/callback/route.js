@@ -1,13 +1,28 @@
 import { NextResponse } from "next/server";
 import { getOrCreateUser, claimGuestProjects } from "@/lib/db";
 
+function getPublicOrigin(request) {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const hostHeader = request.headers.get("host") || "manacaptions.online";
+  const rawHost = (forwardedHost || hostHeader).split(",")[0].trim();
+
+  let host = rawHost;
+  if (host.startsWith("0.0.0.0") || host.startsWith("127.0.0.1") || !host) {
+    host = "manacaptions.online";
+  }
+
+  const proto = request.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
 export async function GET(request) {
+  const publicOrigin = getPublicOrigin(request);
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const error = searchParams.get("error");
 
   if (error || !code) {
-    const loginUrl = new URL("/login?error=" + encodeURIComponent(error || "no_code"), request.url);
+    const loginUrl = new URL("/login?error=" + encodeURIComponent(error || "no_code"), publicOrigin);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -15,13 +30,11 @@ export async function GET(request) {
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
   if (!clientId || !clientSecret || clientId.trim().toLowerCase() === "none") {
-    const loginUrl = new URL("/login?error=missing_credentials", request.url);
+    const loginUrl = new URL("/login?error=missing_credentials", publicOrigin);
     return NextResponse.redirect(loginUrl);
   }
 
-  const host = request.headers.get("host") || "localhost:3000";
-  const protocol = request.headers.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
-  const redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+  const redirectUri = `${publicOrigin}/api/auth/google/callback`;
 
   try {
     // 1. Exchange authorization code for Google access token
@@ -40,7 +53,7 @@ export async function GET(request) {
     if (!tokenRes.ok) {
       const errBody = await tokenRes.text();
       console.error("Google token exchange error:", errBody);
-      const loginUrl = new URL("/login?error=token_exchange_failed", request.url);
+      const loginUrl = new URL("/login?error=token_exchange_failed", publicOrigin);
       return NextResponse.redirect(loginUrl);
     }
 
@@ -53,7 +66,7 @@ export async function GET(request) {
     });
 
     if (!profileRes.ok) {
-      const loginUrl = new URL("/login?error=profile_fetch_failed", request.url);
+      const loginUrl = new URL("/login?error=profile_fetch_failed", publicOrigin);
       return NextResponse.redirect(loginUrl);
     }
 
@@ -93,9 +106,9 @@ export async function GET(request) {
       }
     }
 
-    // 4. Set session cookie and redirect to studio or returnTo
+    // 4. Set session cookie and redirect to studio or returnTo using publicOrigin
     const returnTo = request.cookies.get("tc_return_to")?.value || "/studio";
-    const targetUrl = new URL(returnTo, request.url);
+    const targetUrl = new URL(returnTo, publicOrigin);
     const response = NextResponse.redirect(targetUrl);
     response.cookies.set({
       name: "tc_session",
@@ -109,7 +122,7 @@ export async function GET(request) {
     return response;
   } catch (err) {
     console.error("OAuth callback error:", err);
-    const loginUrl = new URL("/login?error=oauth_exception", request.url);
+    const loginUrl = new URL("/login?error=oauth_exception", publicOrigin);
     return NextResponse.redirect(loginUrl);
   }
 }

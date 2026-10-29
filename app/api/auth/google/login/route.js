@@ -1,17 +1,29 @@
 import { NextResponse } from "next/server";
 
+function getPublicOrigin(request) {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const hostHeader = request.headers.get("host") || "manacaptions.online";
+  const rawHost = (forwardedHost || hostHeader).split(",")[0].trim();
+
+  let host = rawHost;
+  if (host.startsWith("0.0.0.0") || host.startsWith("127.0.0.1") || !host) {
+    host = "manacaptions.online";
+  }
+
+  const proto = request.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
 export async function GET(request) {
+  const publicOrigin = getPublicOrigin(request);
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
   if (!clientId || !clientId.trim() || clientId.trim().toLowerCase() === "none") {
-    const loginUrl = new URL("/login?error=missing_client_id", request.url);
+    const loginUrl = new URL("/login?error=missing_client_id", publicOrigin);
     return NextResponse.redirect(loginUrl);
   }
 
-  // Determine redirect URI based on current request host
-  const host = request.headers.get("host") || "localhost:3000";
-  const protocol = request.headers.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
-  const redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+  const redirectUri = `${publicOrigin}/api/auth/google/callback`;
 
   // Standard Google OAuth 2.0 authorization endpoint
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
