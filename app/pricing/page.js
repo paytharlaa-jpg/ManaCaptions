@@ -692,8 +692,6 @@ export default function PricingPage() {
             <Link href="/privacy" className="hover:text-[#F8F3F0] transition-colors">Privacy Policy</Link>
             <span>•</span>
             <Link href="/dashboard" className="hover:text-[#384DE8] transition-colors">Dashboard</Link>
-            <span>•</span>
-            <Link href="/admin" className="hover:text-[#BB232B] transition-colors">Admin Hub</Link>
           </div>
         </div>
       </footer>

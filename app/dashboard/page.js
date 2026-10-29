@@ -159,13 +159,15 @@ export default function DashboardPage() {
                     <span>Buy Credits</span>
                   </Link>
 
-                  <Link
-                    href="/admin"
-                    className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-[#F8F3F0]/80 hover:text-white hover:bg-[#101742] transition-colors"
-                  >
-                    <ShieldCheck className="w-4 h-4 text-[#384DE8]" />
-                    <span>Admin Hub</span>
-                  </Link>
+                  {user?.isAdmin && (
+                    <Link
+                      href="/admin"
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-[#F8F3F0]/80 hover:text-white hover:bg-[#101742] transition-colors"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-[#384DE8]" />
+                      <span>Admin Hub</span>
+                    </Link>
+                  )}
 
                   <button
                     onClick={() => { logout(); router.push("/login"); }}
@@ -467,8 +469,6 @@ export default function DashboardPage() {
           <Link href="/terms" className="hover:text-[#F8F3F0] transition-colors">Terms</Link>
           <span>•</span>
           <Link href="/privacy" className="hover:text-[#F8F3F0] transition-colors">Privacy</Link>
-          <span>•</span>
-          <Link href="/admin" className="hover:text-[#384DE8] transition-colors">Admin Hub</Link>
           <span>•</span>
           <Link href="/login" className="hover:text-[#F8F3F0] transition-colors">Switch Account</Link>
         </div>

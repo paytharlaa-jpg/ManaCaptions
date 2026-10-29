@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/authContext";
 import {
   Users,
@@ -26,7 +27,8 @@ import {
 } from "lucide-react";
 
 export default function AdminPage() {
-  const { user } = useAuth();
+  const router = useRouter();
+  const { user, isLoading } = useAuth();
   const [adminKey, setAdminKey] = useState("");
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -62,11 +64,26 @@ export default function AdminPage() {
   const [broadcastLoading, setBroadcastLoading] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState(null);
 
-  // Initialize Admin Authentication on mount
+  // Stealth Mode: Non-admin users are immediately redirected to /studio
   useEffect(() => {
-    const savedKey = localStorage.getItem("mc_admin_key") || "admin1234";
-    setAdminKey(savedKey);
-    fetchAdminData(savedKey);
+    if (!isLoading) {
+      if (!user || !user.isAdmin) {
+        router.replace("/studio");
+      }
+    }
+  }, [user, isLoading, router]);
+
+  // Check saved session passkey on mount
+  useEffect(() => {
+    if (user && user.isAdmin) {
+      const savedKey = typeof window !== "undefined" ? sessionStorage.getItem("mc_admin_key") : "";
+      if (savedKey) {
+        setAdminKey(savedKey);
+        fetchAdminData(savedKey);
+      } else {
+        setLoading(false);
+      }
+    }
   }, [user]);
 
   const fetchAdminData = async (key) => {
@@ -86,8 +103,8 @@ export default function AdminPage() {
         setStats(data.stats || {});
         setUsers(data.users || []);
         setRecentTransactions(data.recentTransactions || []);
-        if (key) {
-          localStorage.setItem("mc_admin_key", key);
+        if (key && typeof window !== "undefined") {
+          sessionStorage.setItem("mc_admin_key", key);
         }
       }
     } catch (err) {
@@ -292,7 +309,7 @@ export default function AdminPage() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-[#F8F3F0]">Admin Command Center</h1>
-              <p className="text-xs text-[#F8F3F0]/60 mt-1">Enter your admin passkey to access creator records and broadcast updates.</p>
+              <p className="text-xs text-[#F8F3F0]/60 mt-1">Two-Factor Authentication: Signed in as <span className="text-[#384DE8] font-semibold">{user?.email}</span></p>
             </div>
 
             <form onSubmit={handleKeySubmit} className="space-y-3">
@@ -301,7 +318,7 @@ export default function AdminPage() {
                 required
                 value={adminKey}
                 onChange={(e) => setAdminKey(e.target.value)}
-                placeholder="Enter admin passkey (e.g. admin1234)"
+                placeholder="Enter secret passkey"
                 className="w-full bg-[#060919] border border-[#20309A]/40 rounded-xl px-4 py-2.5 text-xs text-[#F8F3F0] placeholder-[#F8F3F0]/30 focus:outline-none focus:border-[#384DE8] text-center font-mono tracking-widest"
               />
 
@@ -317,10 +334,9 @@ export default function AdminPage() {
                 disabled={loading}
                 className="w-full py-3 rounded-xl bg-gradient-to-r from-[#20309A] via-[#384DE8] to-[#BB232B] hover:from-[#2B3EC4] hover:to-[#D42B34] text-white font-bold text-xs shadow-[0_0_20px_rgba(32,48,154,0.4)] flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
               >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Unlock Admin Hub &rarr;</span>}
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Verify & Unlock &rarr;</span>}
               </button>
             </form>
-            <p className="text-[11px] text-[#F8F3F0]/50">Default development passkey: <code className="text-[#384DE8] font-mono">admin1234</code></p>
           </div>
         ) : (
           <>

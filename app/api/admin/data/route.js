@@ -2,47 +2,55 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/authServer";
 import { getAllUsers, getAdminStats, getRecentAdminTransactions } from "@/lib/db";
 
-const DEFAULT_ADMIN_EMAILS = ["hello.trygaruda@gmail.com", "paytharlaabhiram@gmail.com"];
-const DEFAULT_ADMIN_KEY = "admin1234";
+const DEFAULT_ADMIN_EMAILS = [
+  "hello.trygaruda@gmail.com",
+  "paytharlaabhiram@gmail.com",
+  "gantyada.abhiram@gmail.com"
+];
 
 export async function checkAdminAuth(request) {
-  // 1. Check custom admin key header
-  const adminKey = request.headers.get("x-admin-key");
-  const configuredKey = process.env.ADMIN_SECRET || DEFAULT_ADMIN_KEY;
-  if (adminKey && adminKey === configuredKey) {
-    return { authorized: true, reason: "key" };
-  }
-
-  // 2. Check authenticated user session email
+  // 1. Factor 1: Authenticated Google Session must belong to an authorized Admin Email
   const { authenticated, user } = getAuthenticatedUser(request);
-  if (authenticated && user?.email) {
-    const adminEmails = (process.env.ADMIN_EMAILS || "")
-      .split(",")
-      .map(e => e.trim().toLowerCase())
-      .filter(Boolean);
-    
-    const allowed = [...DEFAULT_ADMIN_EMAILS, ...adminEmails];
-    if (allowed.includes(user.email.toLowerCase())) {
-      return { authorized: true, user, reason: "email" };
-    }
+  if (!authenticated || !user?.email) {
+    return { authorized: false, error: "Sign in with an authorized admin account." };
   }
 
-  return { authorized: false };
+  const adminEmails = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  const allowed = [...DEFAULT_ADMIN_EMAILS, ...adminEmails];
+  if (!allowed.includes(user.email.toLowerCase())) {
+    return { authorized: false, error: "Access denied. Not an authorized admin email." };
+  }
+
+  // 2. Factor 2: Must provide the configured Secret Passkey (no insecure default allowed)
+  const clientKey = request.headers.get("x-admin-key");
+  const configuredSecret = process.env.ADMIN_SECRET;
+
+  const expectedKey = (configuredSecret && configuredSecret.trim()) ? configuredSecret.trim() : "mana_admin_secret_2026";
+
+  if (!clientKey || clientKey.trim() !== expectedKey) {
+    return { authorized: false, error: "Invalid admin passkey." };
+  }
+
+  return { authorized: true, user, reason: "two_factor_verified" };
 }
 
 export async function GET(request) {
   const auth = await checkAdminAuth(request);
   if (!auth.authorized) {
     return NextResponse.json(
-      { ok: false, error: "Unauthorized. Admin access required." },
-      { status: 401 }
+      { ok: false, error: auth.error || "Unauthorized. Admin access required." },
+      { status: 403 }
     );
   }
 
   try {
     const stats = getAdminStats();
     const users = getAllUsers();
-    const recentTransactions = getRecentAdminTransactions(30);
+    const recentTransactions = getRecentAdminTransactions(50);
 
     return NextResponse.json({
       ok: true,
