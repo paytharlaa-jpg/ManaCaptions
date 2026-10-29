@@ -273,23 +273,29 @@ duration = 0
     }
   };
 
-  // Client-Side Canvas Compositor Fallback (Cleaned of all B-roll loops)
+  // Client-Side Canvas Compositor (Lag-Free Hardware Synchronized Renderer)
   const runClientCanvasFallback = async (video) => {
     let audioCtx = null;
+    let frameCallbackId = null;
+    let animId = null;
+
     try {
       setExportProgress(40);
-      setExportStatusText("Running client-side frame compositor...");
+      setExportStatusText("Compositing smooth video frames...");
 
+      // CRITICAL: Position inside viewport with subtle opacity so Chrome NEVER throttles frame rate
       video.playsInline = true;
       video.preload = "auto";
       video.muted = false;
       video.style.position = "fixed";
-      video.style.top = "-9999px";
-      video.style.left = "-9999px";
-      video.style.width = "1px";
-      video.style.height = "1px";
-      video.style.opacity = "0";
+      video.style.top = "0";
+      video.style.left = "0";
+      video.style.width = "320px";
+      video.style.height = "568px";
+      video.style.opacity = "0.002"; // Active in viewport = 100% GPU priority (no 1fps throttle!)
       video.style.pointerEvents = "none";
+      video.style.zIndex = "-1";
+
       if (!video.parentNode && typeof document !== "undefined") {
         document.body.appendChild(video);
       }
@@ -300,48 +306,67 @@ duration = 0
         setTimeout(resolve, 2000);
       });
 
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-      canvas.width = video.videoWidth || 720;
-      canvas.height = video.videoHeight || 1280;
+      // Target clean standard resolution (max 1080p, optimal 720p for silky performance)
+      let targetW = video.videoWidth || 720;
+      let targetH = video.videoHeight || 1280;
+      if (targetW > 1080 || targetH > 1920) {
+        const scale = Math.min(1080 / targetW, 1920 / targetH);
+        targetW = Math.round(targetW * scale);
+        targetH = Math.round(targetH * scale);
+      }
+      if (targetW % 2 !== 0) targetW--;
+      if (targetH % 2 !== 0) targetH--;
 
-      // Extract Audio Track
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+      canvas.width = targetW;
+      canvas.height = targetH;
+
+      // Extract Clean Synchronized Audio Track via Web Audio Destination
       let audioTrack = null;
       try {
-        const captureMethod = video.captureStream || video.mozCaptureStream;
-        if (typeof captureMethod === "function") {
-          const vStream = captureMethod.call(video);
-          const aTracks = vStream.getAudioTracks();
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          audioCtx = new AudioContextClass();
+          if (audioCtx.state === "suspended") await audioCtx.resume();
+          const source = audioCtx.createMediaElementSource(video);
+          const destination = audioCtx.createMediaStreamDestination();
+          source.connect(destination);
+          const aTracks = destination.stream.getAudioTracks();
           if (aTracks.length > 0) audioTrack = aTracks[0];
         }
-      } catch {}
+      } catch (aErr) {
+        console.warn("Web Audio capture notice:", aErr);
+      }
 
       if (!audioTrack) {
         try {
-          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-          if (AudioContextClass) {
-            audioCtx = new AudioContextClass();
-            if (audioCtx.state === "suspended") await audioCtx.resume();
-            const source = audioCtx.createMediaElementSource(video);
-            const destination = audioCtx.createMediaStreamDestination();
-            source.connect(destination);
-            const aTracks = destination.stream.getAudioTracks();
+          const captureMethod = video.captureStream || video.mozCaptureStream;
+          if (typeof captureMethod === "function") {
+            const vStream = captureMethod.call(video);
+            const aTracks = vStream.getAudioTracks();
             if (aTracks.length > 0) audioTrack = aTracks[0];
           }
         } catch {}
       }
 
+      // Smooth 30 FPS Stream
       const canvasStream = canvas.captureStream(30);
       const combinedTracks = [...canvasStream.getVideoTracks()];
       if (audioTrack) combinedTracks.push(audioTrack);
       const combinedStream = new MediaStream(combinedTracks);
 
+      // Prioritize MP4 container if browser supports it
       const candidateMimes = [
+        "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+        "video/mp4;codecs=avc1",
+        "video/mp4",
+        "video/webm;codecs=h264,opus",
         "video/webm;codecs=vp9,opus",
         "video/webm;codecs=vp8,opus",
-        "video/webm",
-        "video/mp4"
+        "video/webm"
       ];
+
       let selectedMime = "";
       for (const m of candidateMimes) {
         if (MediaRecorder.isTypeSupported(m)) {
@@ -351,12 +376,12 @@ duration = 0
       }
 
       const recorderOptions = selectedMime
-        ? { mimeType: selectedMime, audioBitsPerSecond: 192000, videoBitsPerSecond: 5000000 }
-        : { audioBitsPerSecond: 192000 };
+        ? { mimeType: selectedMime, audioBitsPerSecond: 192000, videoBitsPerSecond: 6000000 }
+        : { audioBitsPerSecond: 192000, videoBitsPerSecond: 6000000 };
 
       const mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
       const chunks = [];
-      mediaRecorder.ondataavailable = e => {
+      mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunks.push(e.data);
       };
 
@@ -366,6 +391,10 @@ duration = 0
       const stopRecording = () => {
         if (!isRecording) return;
         isRecording = false;
+        if (typeof video.cancelVideoFrameCallback === "function" && frameCallbackId) {
+          video.cancelVideoFrameCallback(frameCallbackId);
+        }
+        if (animId) cancelAnimationFrame(animId);
         if (mediaRecorder.state !== "inactive") {
           mediaRecorder.stop();
         }
@@ -373,9 +402,12 @@ duration = 0
 
       video.onended = stopRecording;
 
-      mediaRecorder.onstop = async () => {
+      mediaRecorder.onstop = () => {
         if (audioCtx && audioCtx.state !== "closed") {
           audioCtx.close().catch(() => {});
+        }
+        if (video.parentNode) {
+          video.parentNode.removeChild(video);
         }
 
         const recordedMime = mediaRecorder.mimeType || "video/webm";
@@ -387,29 +419,30 @@ duration = 0
           return;
         }
 
-        if (video.parentNode) {
-          video.parentNode.removeChild(video);
-        }
-
         const cleanFallbackBase = (exportName || filename || "video")
           .replace(/\.[^/.]+$/, "")
           .replace(/_manacaption$/i, "")
           .replace(/_captioned$/i, "")
           .replace(/[^a-zA-Z0-9_-]/g, "_") || "video";
-        const fallbackName = `${cleanFallbackBase}_manacaption.mp4`;
+
+        const isMp4 = recordedMime.includes("mp4");
+        const ext = isMp4 ? ".mp4" : ".webm";
+        const fallbackName = `${cleanFallbackBase}_manacaption${ext}`;
         const downloadUrl = URL.createObjectURL(rawBlob);
+
         setExportedVideoUrl(downloadUrl);
         setServerDownloadUrl(downloadUrl);
         setDownloadFilename(fallbackName);
-        setIsMp4Format(recordedMime.includes("mp4"));
+        setIsMp4Format(isMp4);
         setExportProgress(100);
         setIsExportingVideo(false);
-        setExportStatusText("Video rendered and ready!");
+        setExportStatusText("Video rendered smoothly and ready to download!");
       };
 
-      mediaRecorder.start(250);
+      // Start recording with 100ms slices for smooth memory streaming
+      mediaRecorder.start(100);
       video.currentTime = 0;
-      setExportStatusText("Compositing subtitle frames...");
+      setExportStatusText("Compositing synchronized frames...");
 
       try {
         await video.play();
@@ -418,13 +451,14 @@ duration = 0
         await video.play();
       }
 
-      const drawFrame = () => {
+      // Draw frames using requestVideoFrameCallback (zero dropped frames!)
+      const renderNextFrame = () => {
         if (!isRecording) return;
 
         if (video.readyState >= 2) {
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           renderCaptionFrame(video.currentTime, canvas, ctx);
-          setExportProgress(Math.min(85, Math.round((video.currentTime / duration) * 85)));
+          setExportProgress(Math.min(95, Math.round((video.currentTime / duration) * 95)));
         }
 
         if (video.ended || video.currentTime >= duration - 0.05) {
@@ -432,13 +466,24 @@ duration = 0
           return;
         }
 
-        requestAnimationFrame(drawFrame);
+        if (typeof video.requestVideoFrameCallback === "function") {
+          frameCallbackId = video.requestVideoFrameCallback(renderNextFrame);
+        } else {
+          animId = requestAnimationFrame(renderNextFrame);
+        }
       };
 
-      requestAnimationFrame(drawFrame);
+      if (typeof video.requestVideoFrameCallback === "function") {
+        frameCallbackId = video.requestVideoFrameCallback(renderNextFrame);
+      } else {
+        animId = requestAnimationFrame(renderNextFrame);
+      }
     } catch (err) {
       if (audioCtx && audioCtx.state !== "closed") {
         audioCtx.close().catch(() => {});
+      }
+      if (video.parentNode) {
+        video.parentNode.removeChild(video);
       }
       throw err;
     }
