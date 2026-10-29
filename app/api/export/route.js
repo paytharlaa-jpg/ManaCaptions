@@ -83,6 +83,33 @@ function toVttTime(sec) {
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
+
+    // Diagnostic check for production FFmpeg environment
+    if (searchParams.get("check") === "ffmpeg") {
+      const ffmpegBinary = getFfmpegBinary();
+      let ver = "";
+      let enc = "";
+      try {
+        const v = spawnSync(ffmpegBinary, ["-version"]);
+        ver = (v.stdout || v.stderr || "").toString().slice(0, 300);
+      } catch (e) {
+        ver = e.message;
+      }
+      try {
+        const e = spawnSync(ffmpegBinary, ["-encoders"]);
+        enc = (e.stdout || e.stderr || "").toString();
+      } catch (e) {
+        enc = e.message;
+      }
+      return NextResponse.json({
+        binary: ffmpegBinary,
+        version: ver,
+        hasLibx264: enc.includes("libx264"),
+        hasAac: enc.includes("aac"),
+        matchedEncoders: enc.split("\n").filter(l => l.includes("264") || l.includes("aac") || l.includes("h264"))
+      });
+    }
+
     const id = searchParams.get("id");
     const requestedName = searchParams.get("name") || "telugu_reel_captioned.mp4";
 
@@ -166,7 +193,7 @@ export async function POST(request) {
       }
 
       const tmpDir = os.tmpdir();
-      const partPath = path.join(tmpDir, `mana_up_${uploadId}.tmp`);
+      const partPath = path.join(tmpDir, `mana_up_${uploadId}.mp4`);
 
       const chunkBuffer = Buffer.from(await videoChunk.arrayBuffer());
 
@@ -285,7 +312,7 @@ export async function POST(request) {
               resolve();
             } else {
               console.error("FFmpeg transcode error details:", stderr);
-              reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-300)}`));
+              reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-4000)}`));
             }
           });
 
