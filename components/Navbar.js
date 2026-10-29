@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Sparkles, Video, Moon, Sun, Type, Wand2, Film, LayoutDashboard, LogIn, LogOut, ChevronDown, Zap, ShieldCheck } from "lucide-react";
+import { Sparkles, Video, Type, Wand2, Film, LayoutDashboard, LogIn, LogOut, ChevronDown, Zap, ShieldCheck, MessageSquare } from "lucide-react";
 import { useAuth } from "@/lib/authContext";
 
 export default function Navbar({
@@ -26,13 +26,13 @@ export default function Navbar({
           onClick={onResetVideo}
           title="Return to ManaCaption home"
         >
-          {/* Logo container ready for custom logo attachment */}
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#20309A] via-[#384DE8] to-[#BB232B] flex items-center justify-center shadow-[0_0_15px_rgba(32,48,154,0.5)] border border-[#F8F3F0]/20 text-[#F8F3F0] font-black text-xs tracking-tighter group-hover:scale-105 transition-all">
-            MC
+          {/* Logo container with official Telugu Gopuram icon */}
+          <div className="w-9 h-9 rounded-xl bg-[#070A1E] border border-[#20309A]/60 flex items-center justify-center p-1 shadow-[0_0_15px_rgba(32,48,154,0.4)] group-hover:scale-105 transition-all">
+            <img src="/logo-icon.png" alt="ManaCaptions Logo" className="w-full h-full object-contain" />
           </div>
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-[#F8F3F0] text-base sm:text-lg tracking-tight group-hover:text-white transition-colors">
-              ManaCaption
+              Mana<span className="text-[#E0353E]">Captions</span>
             </span>
             <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-[#BB232B]/20 text-[#F8F3F0] border border-[#BB232B]/40 font-bold shadow-[0_0_10px_rgba(187,35,43,0.3)]">
               Studio
@@ -122,14 +122,12 @@ export default function Navbar({
           </button>
         )}
 
-        <button
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="p-2 rounded-xl bg-[#0D1333] hover:bg-[#141C48] text-[#F8F3F0]/70 hover:text-[#F8F3F0] border border-[#20309A]/40 transition-all cursor-pointer"
-          title="Toggle color theme"
-          aria-label="Toggle theme"
+        <Link
+          href="/support"
+          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0D1333] hover:bg-[#141C48] text-[#F8F3F0]/80 hover:text-white border border-[#20309A]/40 text-xs font-semibold transition-all"
         >
-          {theme === "dark" ? <Sun className="w-4 h-4 text-[#384DE8]" /> : <Moon className="w-4 h-4 text-[#384DE8]" />}
-        </button>
+          <span>Support</span>
+        </Link>
 
         {/* User Account / Profile Button */}
         {user ? (
@@ -182,6 +180,15 @@ export default function Navbar({
                   >
                     <Zap className="w-4 h-4 text-[#BB232B] fill-[#BB232B]" />
                     <span>Buy Credits</span>
+                  </Link>
+
+                  <Link
+                    href="/support"
+                    onClick={() => setShowMenu(false)}
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-[#F8F3F0]/80 hover:text-white hover:bg-[#101742] transition-colors"
+                  >
+                    <MessageSquare className="w-4 h-4 text-[#384DE8]" />
+                    <span>Support &amp; Inquiries</span>
                   </Link>
 
 

@@ -55,11 +55,13 @@ export default function DashboardPage() {
       <header className="h-16 border-b border-[#20309A]/30 bg-[#060919]/90 backdrop-blur-xl px-4 sm:px-8 flex items-center justify-between sticky top-0 z-40 shadow-[0_4px_25px_rgba(0,0,0,0.6)]">
         <div className="flex items-center gap-4">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#20309A] via-[#384DE8] to-[#BB232B] flex items-center justify-center shadow-[0_0_15px_rgba(32,48,154,0.5)] border border-[#F8F3F0]/20 text-[#F8F3F0] font-black text-xs group-hover:scale-105 transition-transform">
-              MC
+            <div className="w-9 h-9 rounded-xl bg-[#070A1E] border border-[#20309A]/60 flex items-center justify-center p-1 shadow-[0_0_15px_rgba(32,48,154,0.4)] group-hover:scale-105 transition-all">
+              <img src="/logo-icon.png" alt="ManaCaptions Logo" className="w-full h-full object-contain" />
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-[#F8F3F0] text-base tracking-tight">ManaCaption</span>
+              <span className="font-extrabold text-[#F8F3F0] text-base tracking-tight">
+                Mana<span className="text-[#E0353E]">Captions</span>
+              </span>
               <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-[#BB232B]/20 text-[#F8F3F0] border border-[#BB232B]/40 font-bold shadow-[0_0_10px_rgba(187,35,43,0.3)]">
                 Dashboard
               </span>
@@ -157,6 +159,14 @@ export default function DashboardPage() {
                   >
                     <Zap className="w-4 h-4 text-[#BB232B] fill-[#BB232B]" />
                     <span>Buy Credits</span>
+                  </Link>
+
+                  <Link
+                    href="/support"
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-[#F8F3F0]/80 hover:text-white hover:bg-[#101742] transition-colors"
+                  >
+                    <Sparkles className="w-4 h-4 text-[#384DE8]" />
+                    <span>Support &amp; Help</span>
                   </Link>
 
 
@@ -447,16 +457,16 @@ export default function DashboardPage() {
       {/* Footer */}
       <footer className="border-t border-[#20309A]/30 bg-[#060919] px-6 sm:px-12 py-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-[#F8F3F0]/60 gap-4 mt-12">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-[#20309A] to-[#BB232B] flex items-center justify-center text-white font-black text-[10px]">
-            MC
-          </div>
-          <span className="font-bold text-[#F8F3F0]">ManaCaption</span>
-          <span>· Built for Telugu Creators</span>
+          <img src="/logo-icon.png" alt="ManaCaptions" className="w-5 h-5 object-contain" />
+          <span className="font-bold text-[#F8F3F0]">ManaCaptions</span>
+          <span>· Telugu Captions. Made Easy.</span>
         </div>
         <div className="flex items-center gap-3">
           <Link href="/studio" className="hover:text-[#384DE8] transition-colors">Studio</Link>
           <span>•</span>
           <Link href="/pricing" className="hover:text-[#BB232B] transition-colors">Pricing</Link>
+          <span>•</span>
+          <Link href="/support" className="hover:text-[#384DE8] transition-colors">Support</Link>
           <span>•</span>
           <Link href="/terms" className="hover:text-[#F8F3F0] transition-colors">Terms</Link>
           <span>•</span>

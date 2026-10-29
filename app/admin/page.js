@@ -23,6 +23,8 @@ import {
   FileSpreadsheet,
   Clock,
   Sparkles,
+  MessageSquare,
+  Phone,
   ExternalLink
 } from "lucide-react";
 
@@ -44,6 +46,8 @@ export default function AdminPage() {
   });
   const [users, setUsers] = useState([]);
   const [recentTransactions, setRecentTransactions] = useState([]);
+  const [supportInquiries, setSupportInquiries] = useState([]);
+  const [supportFilter, setSupportFilter] = useState("all");
 
   // Active Tab
   const [activeTab, setActiveTab] = useState("users"); // "users" | "broadcast" | "ledger"
@@ -103,6 +107,7 @@ export default function AdminPage() {
         setStats(data.stats || {});
         setUsers(data.users || []);
         setRecentTransactions(data.recentTransactions || []);
+        setSupportInquiries(data.supportInquiries || []);
         if (key && typeof window !== "undefined") {
           sessionStorage.setItem("mc_admin_key", key);
         }
@@ -113,6 +118,26 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+
+  const handleUpdateSupportStatus = async (id, newStatus) => {
+    try {
+      const res = await fetch("/api/admin/support/status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": adminKey
+        },
+        body: JSON.stringify({ id, status: newStatus })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSupportInquiries(prev => prev.map(inq => inq.id === id ? { ...inq, status: newStatus } : inq));
+      }
+    } catch (e) {
+      console.error("Failed to update status", e);
     }
   };
 
@@ -424,7 +449,172 @@ export default function AdminPage() {
                 <Clock className="w-4 h-4" />
                 <span>System Transactions Ledger</span>
               </button>
+
+              <button
+                onClick={() => setActiveTab("support")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "support"
+                    ? "bg-orange-500/15 border border-orange-500/30 text-orange-400 shadow-sm"
+                    : "text-neutral-400 hover:text-white hover:bg-neutral-900"
+                }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>Support Enquiries ({supportInquiries.filter(i => i.status !== "resolved").length})</span>
+                {supportInquiries.filter(i => i.status === "unread").length > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                )}
+              </button>
             </div>
+
+
+            {/* TAB 4: Support Enquiries */}
+            {activeTab === "support" && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-orange-400" />
+                      <span>Creator Support &amp; Enquiries</span>
+                    </h2>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      Direct incoming tickets from users on /support. Total: {supportInquiries.length} tickets.
+                    </p>
+                  </div>
+
+                  {/* Filter Pills */}
+                  <div className="flex items-center gap-1.5 bg-neutral-900 p-1 rounded-xl border border-neutral-800 text-xs">
+                    {["all", "unread", "in_progress", "resolved"].map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setSupportFilter(f)}
+                        className={`px-3 py-1 rounded-lg font-medium capitalize transition-all cursor-pointer ${
+                          supportFilter === f
+                            ? "bg-orange-500/20 text-orange-400 border border-orange-500/30 font-bold"
+                            : "text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        {f.replace("_", " ")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {supportInquiries.length === 0 ? (
+                  <div className="p-12 text-center rounded-2xl border border-neutral-800 bg-neutral-900/40 text-neutral-500 text-xs">
+                    No support inquiries submitted yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {supportInquiries
+                      .filter(inq => supportFilter === "all" || inq.status === supportFilter)
+                      .map((inq) => {
+                        const cleanPhone = inq.phone ? inq.phone.replace(/[^0-9]/g, "") : "";
+                        return (
+                          <div
+                            key={inq.id}
+                            className={`p-5 rounded-2xl border transition-all space-y-3 ${
+                              inq.status === "unread"
+                                ? "bg-neutral-900/90 border-orange-500/40 shadow-[0_0_20px_rgba(249,115,22,0.1)]"
+                                : inq.status === "resolved"
+                                ? "bg-neutral-950/60 border-neutral-800/60 opacity-70"
+                                : "bg-neutral-900/60 border-neutral-800"
+                            }`}
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-800/60 pb-3">
+                              <div className="flex items-center gap-2.5">
+                                <span className={`text-[10px] uppercase font-mono px-2 py-0.5 rounded-full font-bold ${
+                                  inq.status === "unread"
+                                    ? "bg-red-500/20 text-red-400 border border-red-500/40"
+                                    : inq.status === "in_progress"
+                                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/40"
+                                    : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                                }`}>
+                                  {inq.status}
+                                </span>
+                                <span className="text-[11px] px-2 py-0.5 rounded-md bg-neutral-800 text-neutral-300 font-mono">
+                                  {inq.category}
+                                </span>
+                                <h3 className="text-sm font-bold text-white">{inq.name}</h3>
+                              </div>
+
+                              <div className="text-[11px] text-neutral-500">
+                                {inq.created_at ? new Date(inq.created_at).toLocaleString() : ""}
+                              </div>
+                            </div>
+
+                            {/* Subject & Message */}
+                            <div className="space-y-1">
+                              {inq.subject && (
+                                <div className="text-xs font-semibold text-neutral-200">
+                                  {inq.subject}
+                                </div>
+                              )}
+                              <p className="text-xs text-neutral-300 bg-neutral-950/60 p-3 rounded-xl border border-neutral-800/60 whitespace-pre-wrap leading-relaxed font-sans">
+                                {inq.message}
+                              </p>
+                            </div>
+
+                            {/* User Contact & Actions Bar */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 text-xs">
+                              <div className="flex items-center gap-4 text-neutral-400">
+                                <div className="flex items-center gap-1.5">
+                                  <Mail className="w-3.5 h-3.5 text-neutral-500" />
+                                  <span className="text-neutral-300">{inq.email}</span>
+                                </div>
+                                {inq.phone && (
+                                  <div className="flex items-center gap-1.5">
+                                    <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span className="text-neutral-300">{inq.phone}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Action Buttons */}
+                              <div className="flex items-center gap-2">
+                                {cleanPhone && (
+                                  <a
+                                    href={`https://wa.me/${cleanPhone}?text=Hi%20${encodeURIComponent(inq.name)},%20reaching%20out%20from%20ManaCaptions%20regarding%20your%20inquiry`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                  >
+                                    <Phone className="w-3 h-3" />
+                                    <span>WhatsApp</span>
+                                  </a>
+                                )}
+
+                                <a
+                                  href={`mailto:${inq.email}?subject=Re:%20${encodeURIComponent(inq.subject || "ManaCaptions Support Ticket")}&body=Hi%20${encodeURIComponent(inq.name)},`}
+                                  className="px-3 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                >
+                                  <Mail className="w-3 h-3" />
+                                  <span>Email Reply</span>
+                                </a>
+
+                                {inq.status !== "resolved" ? (
+                                  <button
+                                    onClick={() => handleUpdateSupportStatus(inq.id, "resolved")}
+                                    className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold transition-colors cursor-pointer"
+                                  >
+                                    Mark Resolved
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleUpdateSupportStatus(inq.id, "unread")}
+                                    className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 font-semibold transition-colors cursor-pointer"
+                                  >
+                                    Reopen
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* TAB 1: Users Directory */}
             {activeTab === "users" && (

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/authServer";
-import { getAllUsers, getAdminStats, getRecentAdminTransactions } from "@/lib/db";
+import { getAllUsers, getAdminStats, getRecentAdminTransactions, getAllSupportInquiries } from "@/lib/db";
 
 const DEFAULT_ADMIN_EMAILS = [
   "paytharlaabhiram@gmail.com",
@@ -51,12 +51,14 @@ export async function GET(request) {
     const stats = getAdminStats();
     const users = getAllUsers();
     const recentTransactions = getRecentAdminTransactions(50);
+    const supportInquiries = getAllSupportInquiries(100);
 
     return NextResponse.json({
       ok: true,
       stats,
       users,
-      recentTransactions
+      recentTransactions,
+      supportInquiries
     });
   } catch (err) {
     console.error("Admin data fetch error:", err);

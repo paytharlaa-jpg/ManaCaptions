@@ -206,7 +206,7 @@ export default function PricingPage() {
     },
     {
       q: "How are credits calculated per video?",
-      a: "Credits are charged based on video duration at a rate of 1 credit per minute of video (rounded up). Downloading SRT/VTT subtitle files is completely free! Exporting the final burned-in MP4 video is also charged at 1 credit per minute."
+      a: "Credits are charged based on video duration at a rate of 1 credit per minute of video (rounded up). Downloading SRT/VTT subtitle files and rendering the final burned-in 1080p MP4 video are 100% FREE (0 credits)! You only spend credits when generating AI speech-to-text recognition or Romanization."
     },
     {
       q: "What payment methods are supported?",
@@ -691,7 +691,7 @@ export default function PricingPage() {
             <span>•</span>
             <Link href="/privacy" className="hover:text-[#F8F3F0] transition-colors">Privacy Policy</Link>
             <span>•</span>
-            <Link href="/dashboard" className="hover:text-[#384DE8] transition-colors">Dashboard</Link>
+            <Link href="/dashboard" className="hover:text-[#384DE8] transition-colors">Dashboard</Link><span>•</span><Link href="/support" className="hover:text-[#384DE8] transition-colors">Support</Link>
           </div>
         </div>
       </footer>
