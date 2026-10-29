@@ -667,7 +667,11 @@ Return ONLY a valid JSON object matching this schema:
   ]
 }`;
 
-  const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite"];
+  const modelsToTry = [
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-3.5-flash-lite"
+];
   const timeoutMs = Math.max(120000, Math.ceil(roundedDuration * 2000));
   let lastError = null;
 
