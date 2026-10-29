@@ -4,7 +4,8 @@ import { getAllUsers, getAdminStats, getRecentAdminTransactions, getAllSupportIn
 
 const DEFAULT_ADMIN_EMAILS = [
   "paytharlaabhiram@gmail.com",
-  "hello.trygaruda@gmail.com"
+  "hello.trygaruda@gmail.com",
+  "paytaraludaykumar@gmail.com"
 ];
 
 const DEFAULT_ADMIN_SECRET = "ManaAdmin#2026@Pass";

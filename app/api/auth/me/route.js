@@ -25,7 +25,11 @@ export async function GET(request) {
     .split(",")
     .map(e => e.trim().toLowerCase())
     .filter(Boolean);
-  const defaultAdmins = ["paytharlaabhiram@gmail.com", "hello.trygaruda@gmail.com"];
+  const defaultAdmins = [
+    "paytharlaabhiram@gmail.com",
+    "hello.trygaruda@gmail.com",
+    "paytaraludaykumar@gmail.com"
+  ];
   const allowedAdminEmails = [...defaultAdmins, ...adminEmails];
   const isAdmin = Boolean(authenticated && user?.email && allowedAdminEmails.includes(user.email.toLowerCase()));
 
