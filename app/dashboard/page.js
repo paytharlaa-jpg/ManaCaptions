@@ -159,15 +159,7 @@ export default function DashboardPage() {
                     <span>Buy Credits</span>
                   </Link>
 
-                  {user?.isAdmin && (
-                    <Link
-                      href="/admin"
-                      className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-[#F8F3F0]/80 hover:text-white hover:bg-[#101742] transition-colors"
-                    >
-                      <ShieldCheck className="w-4 h-4 text-[#384DE8]" />
-                      <span>Admin Hub</span>
-                    </Link>
-                  )}
+
 
                   <button
                     onClick={() => { logout(); router.push("/login"); }}

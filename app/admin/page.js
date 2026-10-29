@@ -60,7 +60,7 @@ export default function AdminPage() {
   const [broadcastSubject, setBroadcastSubject] = useState("");
   const [broadcastMessage, setBroadcastMessage] = useState("");
   const [broadcastMode, setBroadcastMode] = useState("all"); // "all" | "test"
-  const [testEmail, setTestEmail] = useState("hello.trygaruda@gmail.com");
+  const [testEmail, setTestEmail] = useState("paytharlaabhiram@gmail.com");
   const [broadcastLoading, setBroadcastLoading] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState(null);
 

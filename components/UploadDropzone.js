@@ -13,6 +13,7 @@ export default function UploadDropzone({
 }) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [turnstileFailed, setTurnstileFailed] = useState(false);
   const fileInputRef = useRef(null);
   const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
@@ -20,6 +21,9 @@ export default function UploadDropzone({
     if (turnstileSiteKey && typeof window !== "undefined") {
       window.onTurnstileSuccess = (token) => {
         window.__cf_turnstile_token = token;
+      };
+      window.onTurnstileError = () => {
+        setTurnstileFailed(true);
       };
       if (!document.getElementById("cf-turnstile-script")) {
         const script = document.createElement("script");
@@ -192,12 +196,13 @@ export default function UploadDropzone({
             Supports MP4, MOV, WebM (up to 2 mins &amp; 100MB) · Dual-Script captions
           </p>
 
-          {turnstileSiteKey && (
+          {turnstileSiteKey && !turnstileFailed && (
             <div className="my-2.5 flex justify-center">
               <div
                 className="cf-turnstile"
                 data-sitekey={turnstileSiteKey}
                 data-callback="onTurnstileSuccess"
+                data-error-callback="onTurnstileError"
                 data-theme="dark"
               />
             </div>

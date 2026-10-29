@@ -3,10 +3,11 @@ import { getAuthenticatedUser } from "@/lib/authServer";
 import { getAllUsers, getAdminStats, getRecentAdminTransactions } from "@/lib/db";
 
 const DEFAULT_ADMIN_EMAILS = [
-  "hello.trygaruda@gmail.com",
   "paytharlaabhiram@gmail.com",
-  "gantyada.abhiram@gmail.com"
+  "hello.trygaruda@gmail.com"
 ];
+
+const DEFAULT_ADMIN_SECRET = "ManaAdmin#2026@Pass";
 
 export async function checkAdminAuth(request) {
   // 1. Factor 1: Authenticated Google Session must belong to an authorized Admin Email
@@ -25,11 +26,10 @@ export async function checkAdminAuth(request) {
     return { authorized: false, error: "Access denied. Not an authorized admin email." };
   }
 
-  // 2. Factor 2: Must provide the configured Secret Passkey (no insecure default allowed)
+  // 2. Factor 2: Must provide the configured Secret Passkey
   const clientKey = request.headers.get("x-admin-key");
-  const configuredSecret = process.env.ADMIN_SECRET;
-
-  const expectedKey = (configuredSecret && configuredSecret.trim()) ? configuredSecret.trim() : "mana_admin_secret_2026";
+  const configuredSecret = process.env.ADMIN_SECRET || DEFAULT_ADMIN_SECRET;
+  const expectedKey = configuredSecret.trim();
 
   if (!clientKey || clientKey.trim() !== expectedKey) {
     return { authorized: false, error: "Invalid admin passkey." };
