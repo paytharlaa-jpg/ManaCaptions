@@ -13,14 +13,26 @@ import { PRICING_RULES } from "@/config/pricing";
 import { createJob, updateJobStatus, deductCreditsAtomically, refundCreditsAtomically } from "@/lib/db";
 
 function getFfmpegBinary() {
-  const localExe = path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg.exe");
-  if (fsSync.existsSync(localExe)) return localExe;
+  // Prefer the binary supplied by ffmpeg-static.
+  if (typeof ffmpegPath === "string" && fsSync.existsSync(ffmpegPath)) {
+    return ffmpegPath;
+  }
 
-  const localBin = path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg");
-  if (fsSync.existsSync(localBin)) return localBin;
+  if (
+    ffmpegPath?.default &&
+    typeof ffmpegPath.default === "string" &&
+    fsSync.existsSync(ffmpegPath.default)
+  ) {
+    return ffmpegPath.default;
+  }
 
-  if (typeof ffmpegPath === "string" && fsSync.existsSync(ffmpegPath)) return ffmpegPath;
-  if (ffmpegPath?.default && fsSync.existsSync(ffmpegPath.default)) return ffmpegPath.default;
+  // Check the platform-specific package location.
+  const binaryName = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  const localBinary = path.join(process.cwd(), "node_modules", "ffmpeg-static", binaryName);
+
+  if (fsSync.existsSync(localBinary)) {
+    return localBinary;
+  }
 
   return "ffmpeg";
 }

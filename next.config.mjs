@@ -37,6 +37,9 @@ const nextConfig = {
   outputFileTracingIncludes: {
     "/api/transcribe": [
       "./node_modules/ffmpeg-static/**/*"
+    ],
+    "/api/export": [
+      "./node_modules/ffmpeg-static/**/*"
     ]
   }
 };

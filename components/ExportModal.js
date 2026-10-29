@@ -283,6 +283,16 @@ duration = 0
       video.playsInline = true;
       video.preload = "auto";
       video.muted = false;
+      video.style.position = "fixed";
+      video.style.top = "-9999px";
+      video.style.left = "-9999px";
+      video.style.width = "1px";
+      video.style.height = "1px";
+      video.style.opacity = "0";
+      video.style.pointerEvents = "none";
+      if (!video.parentNode && typeof document !== "undefined") {
+        document.body.appendChild(video);
+      }
 
       await new Promise((resolve) => {
         if (video.readyState >= 2) return resolve();
@@ -377,43 +387,8 @@ duration = 0
           return;
         }
 
-        setExportProgress(90);
-        setExportStatusText("Converting into universal H.264 & AAC MP4 format...");
-
-        try {
-          const formData = new FormData();
-          formData.append("video", rawBlob, "recorded.webm");
-          formData.append("filename", exportName || "telugu_reel");
-          formData.append("duration", effectiveDuration);
-
-          const res = await fetch("/api/export", {
-            method: "POST",
-            body: formData
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            if (data.ok && data.downloadUrl) {
-              setServerDownloadUrl(data.downloadUrl);
-              const cleanBase = (exportName || filename || "video")
-                .replace(/\.[^/.]+$/, "")
-                .replace(/_manacaption$/i, "")
-                .replace(/_captioned$/i, "")
-                .replace(/[^a-zA-Z0-9_-]/g, "_") || "video";
-              setDownloadFilename(data.filename || `${cleanBase}_manacaption.mp4`);
-              setExportedVideoUrl(data.downloadUrl);
-              setIsMp4Format(true);
-              setExportProgress(100);
-              setIsExportingVideo(false);
-              setExportStatusText("Universal MP4 video rendered and ready!");
-              if (data.creditsRemaining !== undefined && updateCreditsBalance) {
-                updateCreditsBalance(data.creditsRemaining);
-              }
-              return;
-            }
-          }
-        } catch (serverErr) {
-          console.warn("Server transcode error:", serverErr);
+        if (video.parentNode) {
+          video.parentNode.removeChild(video);
         }
 
         const cleanFallbackBase = (exportName || filename || "video")
