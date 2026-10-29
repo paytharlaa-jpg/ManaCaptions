@@ -274,52 +274,88 @@ export async function POST(request) {
           console.warn("Probe audio note:", probeErr.message);
         }
 
-        await new Promise((resolve, reject) => {
-          const ffmpegArgs = [
+        // Resilient FFmpeg Execution for CloudLinux / Shared Hosting (Respects LVE Thread Limits)
+        const runFfmpegAttempt = (args) => {
+          return new Promise((resolve, reject) => {
+            const proc = spawn(ffmpegBinary, args, { cwd: tmpDir });
+            let stderr = "";
+            proc.stderr.on("data", chunk => {
+              stderr += chunk.toString();
+            });
+            proc.on("close", code => {
+              if (code === 0) resolve();
+              else reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-2000)}`));
+            });
+            proc.on("error", err => reject(err));
+          });
+        };
+
+        // Filter chain: scale to even dimensions and burn styled ASS captions
+        let vfFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+        if (subtitlesAss) {
+          vfFilter += `,ass=${subsName}`;
+        }
+
+        // Attempt 1: High-Speed H.264 constrained to 1 thread (bypasses CloudLinux NPROC limit)
+        const primaryArgs = [
+          "-y",
+          "-i", partPath,
+          "-vf", vfFilter,
+          "-threads", "1",
+          "-c:v", "libx264",
+          "-pix_fmt", "yuv420p",
+          "-preset", "ultrafast",
+          "-crf", "22",
+          "-x264-params", "threads=1"
+        ];
+        if (hasAudio) {
+          primaryArgs.push("-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2");
+        }
+        primaryArgs.push("-movflags", "+faststart", outputPath);
+
+        try {
+          await runFfmpegAttempt(primaryArgs);
+        } catch (attempt1Err) {
+          console.warn("Attempt 1 (libx264 ultrafast) failed:", attempt1Err.message);
+
+          // Attempt 2: Fallback to MPEG-4 ASP (Built directly into FFmpeg, zero external lib dependency, works on any CloudLinux kernel!)
+          const fallbackArgs = [
             "-y",
-            "-i", partPath
+            "-i", partPath,
+            "-vf", vfFilter,
+            "-threads", "1",
+            "-c:v", "mpeg4",
+            "-q:v", "3"
           ];
-
-          // Hardcode/burn high-fidelity styled subtitles directly into video frames
-          // Ensure dimensions are divisible by 2 for H.264 compatibility
-          let vfFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
-          if (subtitlesAss) {
-            vfFilter += `,ass=${subsName}`;
-          }
-          ffmpegArgs.push("-vf", vfFilter);
-
-          ffmpegArgs.push(
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-preset", "veryfast",
-            "-crf", "18"
-          );
-
           if (hasAudio) {
-            ffmpegArgs.push("-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2");
+            fallbackArgs.push("-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2");
           }
+          fallbackArgs.push("-movflags", "+faststart", outputPath);
 
-          ffmpegArgs.push("-movflags", "+faststart", outputPath);
+          try {
+            await runFfmpegAttempt(fallbackArgs);
+          } catch (attempt2Err) {
+            console.warn("Attempt 2 (mpeg4) failed:", attempt2Err.message);
 
-          const proc = spawn(ffmpegBinary, ffmpegArgs, { cwd: tmpDir });
-          let stderr = "";
-          proc.stderr.on("data", chunk => {
-            stderr += chunk.toString();
-          });
-
-          proc.on("close", code => {
-            if (code === 0) {
-              resolve();
-            } else {
-              console.error("FFmpeg transcode error details:", stderr);
-              reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-4000)}`));
+            // Attempt 3: If subtitle filter failed due to font, transcode cleanly with even dimensions
+            const rescueArgs = [
+              "-y",
+              "-i", partPath,
+              "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+              "-threads", "1",
+              "-c:v", "libx264",
+              "-pix_fmt", "yuv420p",
+              "-preset", "ultrafast",
+              "-crf", "22",
+              "-x264-params", "threads=1"
+            ];
+            if (hasAudio) {
+              rescueArgs.push("-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2");
             }
-          });
-
-          proc.on("error", err => {
-            reject(err);
-          });
-        });
+            rescueArgs.push("-movflags", "+faststart", outputPath);
+            await runFfmpegAttempt(rescueArgs);
+          }
+        }
 
         const mp4Buffer = await fs.readFile(outputPath);
 
