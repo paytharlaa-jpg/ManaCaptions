@@ -6,7 +6,20 @@ export const dynamic = "force-dynamic";
 export async function GET(request) {
   const { authenticated, user } = getAuthenticatedUser(request);
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-  const hasSecret = Boolean(process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CLIENT_SECRET.trim());
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+  const isRealClientId = Boolean(
+    clientId &&
+    clientId.trim() &&
+    clientId.trim().toLowerCase() !== "none" &&
+    !clientId.includes("your-google")
+  );
+  const isRealSecret = Boolean(
+    clientSecret &&
+    clientSecret.trim() &&
+    clientSecret.trim().toLowerCase() !== "none" &&
+    !clientSecret.includes("your-google")
+  );
 
   return NextResponse.json({
     ok: true,
@@ -21,7 +34,7 @@ export async function GET(request) {
       credits_balance: user.credits_balance ?? 10,
       created_at: user.created_at
     } : null,
-    googleConfigured: Boolean(clientId && clientId.trim() && hasSecret),
-    googleClientId: clientId ? clientId.trim() : null
+    googleConfigured: isRealClientId && isRealSecret,
+    googleClientId: isRealClientId ? clientId.trim() : null
   });
 }

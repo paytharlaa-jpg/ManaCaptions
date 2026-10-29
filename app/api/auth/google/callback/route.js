@@ -6,8 +6,6 @@ export async function GET(request) {
   const code = searchParams.get("code");
   const error = searchParams.get("error");
 
-  const baseUrl = new URL("/", request.url);
-
   if (error || !code) {
     const loginUrl = new URL("/login?error=" + encodeURIComponent(error || "no_code"), request.url);
     return NextResponse.redirect(loginUrl);
@@ -16,7 +14,7 @@ export async function GET(request) {
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
-  if (!clientId || !clientSecret) {
+  if (!clientId || !clientSecret || clientId.trim().toLowerCase() === "none") {
     const loginUrl = new URL("/login?error=missing_credentials", request.url);
     return NextResponse.redirect(loginUrl);
   }
@@ -68,7 +66,7 @@ export async function GET(request) {
       email: profile.email,
       avatar: profile.picture || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(profile.name || "Creator")}`,
       provider: "google",
-      plan: "Creator Pro",
+      plan: "free",
       quotaTotal: 180,
       quotaUsed: 0,
       joined: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })
@@ -76,7 +74,11 @@ export async function GET(request) {
 
     // Save/sync user in DB with 10 free signup credits
     try {
-      getOrCreateUser(user);
+      const dbUser = getOrCreateUser(user);
+      if (dbUser) {
+        user.credits_balance = dbUser.credits_balance;
+        user.plan = dbUser.plan || "free";
+      }
     } catch (dbErr) {
       console.warn("Could not sync user to DB in OAuth callback:", dbErr.message);
     }
@@ -91,8 +93,8 @@ export async function GET(request) {
       }
     }
 
-    // 4. Set session cookie and redirect to starting page (Dashboard or returnTo)
-    const returnTo = request.cookies.get("tc_return_to")?.value || "/";
+    // 4. Set session cookie and redirect to studio or returnTo
+    const returnTo = request.cookies.get("tc_return_to")?.value || "/studio";
     const targetUrl = new URL(returnTo, request.url);
     const response = NextResponse.redirect(targetUrl);
     response.cookies.set({

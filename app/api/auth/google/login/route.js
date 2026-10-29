@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export async function GET(request) {
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
-  if (!clientId || !clientId.trim()) {
+  if (!clientId || !clientId.trim() || clientId.trim().toLowerCase() === "none") {
     const loginUrl = new URL("/login?error=missing_client_id", request.url);
     return NextResponse.redirect(loginUrl);
   }
@@ -22,5 +22,25 @@ export async function GET(request) {
   authUrl.searchParams.set("access_type", "offline");
   authUrl.searchParams.set("prompt", "select_account");
 
-  return NextResponse.redirect(authUrl.toString());
+  // Save returnTo path
+  const referer = request.headers.get("referer");
+  let returnToPath = "/studio";
+  if (referer) {
+    try {
+      const refUrl = new URL(referer);
+      if (refUrl.pathname && refUrl.pathname !== "/login") {
+        returnToPath = refUrl.pathname;
+      }
+    } catch {}
+  }
+
+  const response = NextResponse.redirect(authUrl.toString());
+  response.cookies.set({
+    name: "tc_return_to",
+    value: returnToPath,
+    path: "/",
+    maxAge: 60 * 10 // 10 minutes
+  });
+
+  return response;
 }
