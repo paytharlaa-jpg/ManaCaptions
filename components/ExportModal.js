@@ -219,6 +219,8 @@ duration = 0
         videoWidth,
         videoHeight
       });
+      console.log("EXPORT STYLE CONFIG:", styleConfig);
+console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
 
       // 4. Primary Route: Server-Side FFmpeg Subtitle Burn with Chunked Upload
       // Slices video into 3MB chunks to bypass Hostinger LiteSpeed payload limit (100% reliable!)

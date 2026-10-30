@@ -270,7 +270,7 @@ export async function POST(request) {
     // Background cleanup of expired unclaimed guest projects (>48h)
     try {
       cleanupUnclaimedGuestProjects();
-    } catch {}
+    } catch { }
 
     // Execute Existing Pipeline
     const result = await runTranscriptionPipeline(file, language, durationSec);
@@ -384,7 +384,7 @@ async function extractAudioFromFile(file) {
         "-ac", "1",
         "-ar", "16000",
         "-b:a", "64k",
-"-f", "mp3",
+        "-f", "mp3",
         outputPath,
       ],
       {
@@ -422,13 +422,12 @@ async function extractAudioFromFile(file) {
     console.error("Audio extraction failed:", error);
 
     throw new Error(
-      `Could not extract audio: ${
-        error instanceof Error ? error.message : String(error)
+      `Could not extract audio: ${error instanceof Error ? error.message : String(error)
       }`
     );
   } finally {
-    await fs.unlink(inputPath).catch(() => {});
-    await fs.unlink(outputPath).catch(() => {});
+    await fs.unlink(inputPath).catch(() => { });
+    await fs.unlink(outputPath).catch(() => { });
   }
 }
 
@@ -596,21 +595,34 @@ async function transcribeWithGroq(audioData, language = "te") {
  * Safely recovers truncated JSON by scanning backwards for the last valid segment
  */
 function safeRecoverJson(rawText) {
-  if (!rawText) return null;
-  const clean = rawText.trim();
-  const lastSegEnd = clean.lastIndexOf("}");
-  if (lastSegEnd > 0) {
-    const candidate = clean.slice(0, lastSegEnd + 1);
-    const closers = ["]}", "\"]}", "}]}", "\"}]}", "\"}]}}"];
-    for (const closer of closers) {
-      try {
-        const testObj = JSON.parse(candidate + closer);
-        if (testObj && testObj.segments && Array.isArray(testObj.segments)) {
-          return testObj;
-        }
-      } catch {}
+  if (!rawText || typeof rawText !== "string") return null;
+
+  const clean = rawText.trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  // First, try parsing the complete response.
+  try {
+    const parsed = JSON.parse(clean);
+    if (parsed && Array.isArray(parsed.segments)) {
+      return parsed;
     }
-  }
+  } catch { }
+
+  // Next, try extracting the JSON object from surrounding text.
+  const firstBrace = clean.indexOf("{");
+  const lastBrace = clean.lastIndexOf("}");
+
+  if (firstBrace === -1 || lastBrace <= firstBrace) return null;
+
+  try {
+    const parsed = JSON.parse(clean.slice(firstBrace, lastBrace + 1));
+    if (parsed && Array.isArray(parsed.segments)) {
+      return parsed;
+    }
+  } catch { }
+
   return null;
 }
 
@@ -646,13 +658,25 @@ CRITICAL MOVIE-SUBTITLE RULES:
    - If the speaker spoke English, write the exact verbatim English words spoken.
    - If the speaker spoke Telugu, write the phonetic Romanized English transliteration (e.g. "chivari video lo").
 
-4. "words":
-   - Provide acoustic timestamps for each spoken word.
+4. "words" (CRITICAL WORD-LEVEL TIMING):
+   - Listen carefully to the actual audio and identify the acoustic start and end of EVERY spoken word.
+   - The start timestamp must be when the speaker actually begins pronouncing that word.
+   - The end timestamp must be when the speaker finishes pronouncing that word.
+   - Do NOT divide a sentence's duration equally among its words.
+   - Do NOT estimate word timings based on word count or sentence length.
+   - Preserve natural pauses between words.
+   - Never overlap consecutive word timestamps unless the audio genuinely contains overlapping speech.
+   - All timestamps must be in seconds, measured from the beginning of the audio.
+   - Word timestamps must remain within their parent segment's start and end.
+   - Return accurate individual timestamps for every word.
 
-Return ONLY a valid JSON object matching this schema:
+Return ONLY a valid JSON object. Do not include Markdown code fences, comments, or explanations.
+
+The detectedLanguage value must be exactly one of: "telugu", "english", or "mixed".
+
 {
-  "detectedLanguage": "telugu" | "english" | "mixed",
-  "songTitle": "Optional title if recognized",
+  "detectedLanguage": "telugu",
+  "songTitle": "",
   "segments": [
     {
       "id": "seg-1",
@@ -661,17 +685,23 @@ Return ONLY a valid JSON object matching this schema:
       "text": "తెలుగు లిపిలో సినిమా శైలి క్యాప్షన్",
       "romanizedText": "Exact verbatim spoken words as uttered",
       "words": [
-        { "word": "తెలుగు/word", "romanized": "word", "start": 0.0, "end": 0.5 }
+        {
+          "word": "తెలుగు",
+          "romanized": "telugu",
+          "start": 0.0,
+          "end": 0.5
+        }
       ]
     }
   ]
+}
 }`;
 
   const modelsToTry = [
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-3.5-flash-lite"
-];
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3.5-flash-lite"
+  ];
   const timeoutMs = Math.max(120000, Math.ceil(roundedDuration * 2000));
   let lastError = null;
 
@@ -712,15 +742,46 @@ Return ONLY a valid JSON object matching this schema:
       }
 
       const data = await response.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) throw new Error("No response content from Gemini");
+      const candidate = data?.candidates?.[0];
+
+      if (!candidate) {
+        const blockReason = data?.promptFeedback?.blockReason;
+
+        throw new Error(
+          blockReason
+            ? `Gemini blocked the request: ${blockReason}`
+            : "Gemini returned no candidate response."
+        );
+      }
+      console.log("Gemini finish reason:", candidate.finishReason);
+console.log("Gemini usage:", data.usageMetadata);
+
+      const rawText = (candidate.content?.parts || [])
+        .map(part => part.text || "")
+        .join("")
+        .trim();
+
+      if (!rawText) {
+        throw new Error("Gemini returned an empty transcription response.");
+      }
 
       let parsed;
+
       try {
         parsed = JSON.parse(rawText);
-      } catch (parseErr) {
+      } catch {
         parsed = safeRecoverJson(rawText);
-        if (!parsed) throw parseErr;
+      }
+
+      if (!parsed || !Array.isArray(parsed.segments)) {
+        throw new Error(
+          `Gemini returned invalid JSON. Finish reason: ${candidate.finishReason || "unknown"
+          }. Response preview: ${rawText.slice(0, 300)}`
+        );
+      }
+
+      if (parsed.segments.length === 0) {
+        throw new Error("Gemini returned no transcript segments.");
       }
       if (parsed.segments && Array.isArray(parsed.segments) && parsed.segments.length > 0) {
         let segs = parsed.segments.map((s, idx) => ({
@@ -1134,16 +1195,16 @@ async function ensureDualScriptNative(segments) {
 
     const updatedWords = (seg.words && seg.words.length > 0)
       ? seg.words.map((w, idx) => ({
-          ...w,
-          word: teWords[idx] || w.word,
-          romanized: w.romanized || exactEnglish.split(/\s+/)[idx] || w.word
-        }))
+        ...w,
+        word: teWords[idx] || w.word,
+        romanized: w.romanized || exactEnglish.split(/\s+/)[idx] || w.word
+      }))
       : teWords.map((w, idx) => ({
-          word: w,
-          romanized: exactEnglish.split(/\s+/)[idx] || w,
-          start: Number(((seg.start || 0) + idx * wordDur).toFixed(2)),
-          end: Number(((seg.start || 0) + (idx + 1) * wordDur).toFixed(2))
-        }));
+        word: w,
+        romanized: exactEnglish.split(/\s+/)[idx] || w,
+        start: Number(((seg.start || 0) + idx * wordDur).toFixed(2)),
+        end: Number(((seg.start || 0) + (idx + 1) * wordDur).toFixed(2))
+      }));
 
     return {
       ...seg,
