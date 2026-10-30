@@ -89,6 +89,18 @@ export async function GET(request) {
       const ffmpegBinary = getFfmpegBinary();
       let ver = "";
       let enc = "";
+      let filters = "";
+
+try {
+  const f = spawnSync(ffmpegBinary, ["-filters"], {
+    encoding: "utf8",
+    timeout: 15000
+  });
+
+  filters = (f.stdout || "") + (f.stderr || "");
+} catch (e) {
+  filters = e.message;
+}
       try {
         const v = spawnSync(ffmpegBinary, ["-version"]);
         ver = (v.stdout || v.stderr || "").toString().slice(0, 300);
@@ -101,13 +113,24 @@ export async function GET(request) {
       } catch (e) {
         enc = e.message;
       }
-      return NextResponse.json({
-        binary: ffmpegBinary,
-        version: ver,
-        hasLibx264: enc.includes("libx264"),
-        hasAac: enc.includes("aac"),
-        matchedEncoders: enc.split("\n").filter(l => l.includes("264") || l.includes("aac") || l.includes("h264"))
-      });
+     return NextResponse.json({
+  binary: ffmpegBinary,
+  version: ver,
+  hasLibx264: enc.includes("libx264"),
+  hasAac: enc.includes("aac"),
+
+  hasAssFilter: filters
+    .split("\n")
+    .some(line => /\bass\b/.test(line)),
+
+  matchedSubtitleFilters: filters
+    .split("\n")
+    .filter(line => line.includes(" ass ")),
+
+  matchedEncoders: enc.split("\n").filter(l =>
+    l.includes("264") || l.includes("aac") || l.includes("h264")
+  )
+});
     }
 
     const id = searchParams.get("id");
