@@ -550,7 +550,7 @@ async function transcribeWithGroq(audioData, language = "te") {
 
   if (language === "te") {
     groqForm.append("language", "te");
-    groqForm.append("prompt", "Telugu dialogue, reels captions, conversational speech.");
+    groqForm.append("prompt", "Telugu and Tanglish conversational dialogue, reels captions. Transcribe exact spoken words verbatim.");
   } else if (language === "en") {
     groqForm.append("language", "en");
     groqForm.append("prompt", "Clear song lyrics, vocal audio, and social media video captions.");
@@ -643,21 +643,22 @@ The audio clip is approximately ${roundedDuration} seconds long.
 You MUST transcribe all spoken dialogue across the full ${roundedDuration} seconds until the very end of the clip.
 Do NOT stop early or truncate before the end of the audio.
 
-CRITICAL MOVIE-SUBTITLE RULES:
-1. EXACT SPOKEN WORDS (LIKE MOVIE SUBTITLES):
-   - Capture EXACTLY what the speaker speaks, word-for-word, without guessing, analyzing meaning, summarizing, or rephrasing.
+CRITICAL TRANSCRIPTION RULES (STRICT VERBATIM TRANSCRIBER - DO NOT TRANSLATE):
+1. EXACT SPOKEN WORDS (VERBATIM TRANSCRIBER, NOT A TRANSLATOR):
+   - Capture EXACTLY what the speaker speaks, word-for-word, sound-for-sound.
+   - You are a transcriber, NOT a translator. NEVER translate words or change the speaker's vocabulary!
    - Zero typographical errors. Exact audio sync.
 
-2. "text" (TELUGU SCRIPT - ALWAYS TELUGU):
-   - Must ALWAYS be written in authentic Telugu script (తెలుగు లిపి).
-   - If the speaker spoke Telugu or mixed Telugu/English (Telugish): write the Telugu dialogue in natural Telugu script (తెలుగు లిపి).
-   - If the speaker spoke English: provide the natural, high-quality Telugu movie subtitle in authentic Telugu script (తెలుగు లిపి).
-   - The "text" field must NEVER contain raw English text. It must always be authentic Telugu script!
+2. "text" (EXACT SPOKEN WORDS IN TELUGU SCRIPT):
+   - Must be written in Telugu script (తెలుగు లిపి).
+   - If the speaker spoke Telugu: write the exact spoken Telugu words in Telugu script (e.g. "ఈ రోజు మనం").
+   - If the speaker spoke English words or Tanglish (e.g. "friends", "video", "subscribe", "tips", "channel"): phonetically transcribe the sound into Telugu script (e.g. "ఫ్రెండ్స్", "వీడియో", "సబ్‌స్క్రైబ్", "టిప్స్", "ఛానల్").
+   - CRITICAL: NEVER translate English words into formal Telugu meaning! (e.g. NEVER translate "friends" to "స్నేహితులు", NEVER translate "subscribe" to "సభ్యత్వాన్ని పొందండి", NEVER translate "video" to "దృశ్యచిత్రం"). Keep the EXACT words the speaker spoke!
 
-3. "romanizedText" (EXACT SPOKEN LINE):
-   - What the speaker actually spoke, in Latin/English letters.
-   - If the speaker spoke English, write the exact verbatim English words spoken.
-   - If the speaker spoke Telugu, write the phonetic Romanized English transliteration (e.g. "chivari video lo").
+3. "romanizedText" (EXACT SPOKEN WORDS IN LATIN / ENGLISH LETTERS):
+   - Write the exact verbatim words the speaker uttered in Latin/English letters.
+   - If English words: write exact English words ("friends, welcome to my channel").
+   - If Telugu/Tanglish words: write the phonetic Romanized spelling ("ee video lo manam chuddam").
 
 4. "words" (CRITICAL WORD-LEVEL TIMING):
    - Listen carefully to the actual audio and identify the acoustic start and end of EVERY spoken word.
@@ -1092,7 +1093,12 @@ async function ensureDualScriptNative(segments) {
               {
                 parts: [
                   {
-                    text: `You are a Telugu subtitle translator for reels and movies. Convert these subtitle lines into natural, authentic native Telugu language style (తెలుగు లిపి). Return ONLY a JSON object: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}.\nLines to convert:\n${JSON.stringify(inputLines)}`
+                    text: `You are a verbatim Telugu transcriber for reels. Transcribe these subtitle lines into Telugu script (తెలుగు లిపి) preserving the EXACT words spoken!
+CRITICAL RULES:
+1. You are a transcriber, NOT a translator. DO NOT translate words into formal Telugu!
+2. If an English/Tanglish word is spoken (e.g. "friends", "video", "tips", "share", "channel"), transcribe its phonetic sound in Telugu script (e.g. "ఫ్రెండ్స్", "వీడియో", "టిప్స్", "షేర్", "ఛానల్"). NEVER translate "friends" to "స్నేహితులు" or "channel" to "మాధ్యమం"!
+3. Keep the exact words the creator actually said.
+Return ONLY JSON: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}.\nLines to transcribe:\n${JSON.stringify(inputLines)}`
                   }
                 ]
               }
@@ -1145,7 +1151,7 @@ async function ensureDualScriptNative(segments) {
             messages: [
               {
                 role: "system",
-                content: 'You are a professional Telugu reel subtitle converter. Convert the provided subtitle lines into natural, direct native Telugu language style (తెలుగు లిపి). CRITICAL: Do NOT analyze meaning, do NOT add extra words, do NOT summarize or rephrase. Give crisp, direct native Telugu captions matching each line. Return JSON: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}'
+                content: 'You are a verbatim Telugu reel subtitle transcriber. Transcribe the provided lines into Telugu script (తెలుగు లిపి) preserving the EXACT words spoken. DO NOT translate English/Tanglish words to pure Telugu dictionary meanings (e.g. write "ఫ్రెండ్స్" not "స్నేహితులు", write "వీడియో" not "దృశ్యచిత్రం"). Return JSON: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}'
               },
               {
                 role: "user",
