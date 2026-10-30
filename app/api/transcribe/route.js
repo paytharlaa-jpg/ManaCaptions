@@ -384,11 +384,12 @@ async function extractAudioFromFile(file) {
         "-ac", "1",
         "-ar", "16000",
         "-b:a", "64k",
+        "-threads", "1",
         "-f", "mp3",
         outputPath,
       ],
       {
-        timeout: 60000,
+        timeout: 15000,
         encoding: "utf8",
         windowsHide: true,
         maxBuffer: 1024 * 1024,
@@ -698,11 +699,10 @@ The detectedLanguage value must be exactly one of: "telugu", "english", or "mixe
 }`;
 
   const modelsToTry = [
-    "gemini-2.5-flash",
-    "gemini-3.8-flash",
-    "gemini-flash-latest"
+    "gemini-2.5-flash"
   ];
-  const timeoutMs = Math.max(120000, Math.ceil(roundedDuration * 2000));
+  // Hostinger LiteSpeed timeout shield: 14s max per model so total request finishes well within 30s
+  const timeoutMs = 14000;
   let lastError = null;
 
   for (const model of modelsToTry) {
@@ -729,7 +729,7 @@ The detectedLanguage value must be exactly one of: "telugu", "english", or "mixe
             ],
             generationConfig: {
               responseMimeType: "application/json",
-              maxOutputTokens: 65536,
+              maxOutputTokens: 8192,
               temperature: 0.1
             }
           })
@@ -1085,7 +1085,7 @@ async function ensureDualScriptNative(segments) {
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
         {
           method: "POST",
-          signal: AbortSignal.timeout(30000),
+          signal: AbortSignal.timeout(6000),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [
@@ -1134,7 +1134,7 @@ async function ensureDualScriptNative(segments) {
       if (remainingLines.length > 0) {
         const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
-          signal: AbortSignal.timeout(45000),
+          signal: AbortSignal.timeout(6000),
           headers: {
             Authorization: `Bearer ${groqKey}`,
             "Content-Type": "application/json"
