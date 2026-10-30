@@ -36,8 +36,35 @@ duration = 0
   const [guestAction, setGuestAction] = useState("download_video");
 
   const lastSegEnd = segments && segments.length > 0 ? (segments[segments.length - 1]?.end || 0) : 0;
-  const effectiveDuration = duration > 0 ? duration : (lastSegEnd > 0 ? lastSegEnd : 30);
+  const trimStart = Math.max(0, trimRange?.start || 0);
+  const trimEnd = (trimRange?.end && trimRange.end > 0) ? trimRange.end : (duration > 0 ? duration : lastSegEnd || 30);
+  const isTrimmed = trimStart > 0.05 || (trimEnd < (duration > 0 ? duration - 0.05 : 9999));
+  const effectiveDuration = isTrimmed && trimEnd > trimStart ? Math.max(1, trimEnd - trimStart) : (duration > 0 ? duration : (lastSegEnd > 0 ? lastSegEnd : 30));
   const exportCost = PRICING_RULES.calculateExportCost(effectiveDuration);
+
+  // Helper to slice and shift segment timestamps for trimmed export
+  const getTrimmedSegments = () => {
+    if (!isTrimmed || trimStart <= 0.05) return segments;
+    return (segments || [])
+      .filter(s => s.end > trimStart && s.start < trimEnd)
+      .map(s => {
+        const newStart = Math.max(0, Number((s.start - trimStart).toFixed(2)));
+        const newEnd = Math.max(newStart + 0.1, Number((s.end - trimStart).toFixed(2)));
+        const newWords = (s.words || [])
+          .filter(w => (w.end || w.start) > trimStart && (w.start || w.end) < trimEnd)
+          .map(w => ({
+            ...w,
+            start: Math.max(0, Number(((w.start ?? s.start) - trimStart).toFixed(2))),
+            end: Math.max(0.1, Number(((w.end ?? s.end) - trimStart).toFixed(2)))
+          }));
+        return {
+          ...s,
+          start: newStart,
+          end: newEnd,
+          words: newWords
+        };
+      });
+  };
 
   const cleanInitialBase = (filename || "telugu_reel")
     .replace(/\.[^/.]+$/, "")
@@ -119,7 +146,8 @@ duration = 0
       return;
     }
     let srt = "";
-    segments.forEach((seg, i) => {
+    const activeSegs = getTrimmedSegments();
+    activeSegs.forEach((seg, i) => {
       const text = scriptMode === "romanized" && seg.romanizedText ? seg.romanizedText : seg.text;
       srt += `${i + 1}\n${toSrtTime(seg.start)} --> ${toSrtTime(seg.end)}\n${text}\n\n`;
     });
@@ -136,7 +164,8 @@ duration = 0
       return;
     }
     let vtt = "WEBVTT\n\n";
-    segments.forEach((seg, i) => {
+    const activeSegs = getTrimmedSegments();
+    activeSegs.forEach((seg, i) => {
       const text = scriptMode === "romanized" && seg.romanizedText ? seg.romanizedText : seg.text;
       const srtStart = toSrtTime(seg.start).replace(',', '.');
       const srtEnd = toSrtTime(seg.end).replace(',', '.');
@@ -212,8 +241,9 @@ duration = 0
       const videoHeight = tempVideo.videoHeight || 1280;
 
       // 3. Generate ASS Subtitles
+      const activeSegs = getTrimmedSegments();
       const assSubtitles = generateAssSubtitles({
-        segments,
+        segments: activeSegs,
         styleConfig,
         scriptMode,
         videoWidth,
@@ -244,6 +274,10 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
           formData.append("uploadId", uploadId);
           formData.append("filename", exportName || filename || "telugu_reel");
           formData.append("duration", String(effectiveDuration));
+          if (isTrimmed && trimEnd > trimStart) {
+            formData.append("trimStart", String(trimStart));
+            formData.append("trimEnd", String(trimEnd));
+          }
 
           if (chunkIdx === totalChunks - 1) {
             formData.append("subtitlesAss", assSubtitles);
@@ -741,6 +775,11 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
             <p className="text-[11px] text-[#F8F3F0]/60 mt-0.5">
               Hardcodes your styled captions directly into the video frames with full synchronized audio.
             </p>
+            {isTrimmed && (
+              <p className="text-[10px] text-[#BB232B] font-mono font-semibold mt-1">
+                ✂️ Trim Range: {Math.floor(trimStart/60)}:{String(Math.floor(trimStart%60)).padStart(2,'0')} - {Math.floor(trimEnd/60)}:{String(Math.floor(trimEnd%60)).padStart(2,'0')} ({effectiveDuration.toFixed(1)}s cut)
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1">

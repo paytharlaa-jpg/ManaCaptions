@@ -48,6 +48,7 @@ export default function StudioApp() {
   const [segments, setSegments] = useState([]);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(1);
+  const [trimRange, setTrimRange] = useState({ start: 0, end: 0 });
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Editor configuration
@@ -89,6 +90,19 @@ export default function StudioApp() {
     }
   }, []);
 
+
+  // Auto-sync trimRange when duration changes
+  useEffect(() => {
+    if (duration > 0) {
+      setTrimRange(prev => {
+        if (prev.end === 0 || prev.end > duration) {
+          return { start: Math.min(prev.start, duration), end: duration };
+        }
+        return prev;
+      });
+    }
+  }, [duration]);
+
   // Load Built-in Demo Reel Sample
   const handleLoadDemo = () => {
     setVideoSrc(SAMPLE_PROJECT.videoUrl);
@@ -110,6 +124,7 @@ export default function StudioApp() {
     setVideoSrc(null);
     setCurrentFile(null);
     setSegments([]);
+    setTrimRange({ start: 0, end: 0 });
     setCurrentTime(0);
     setIsPlaying(false);
   };
@@ -377,6 +392,9 @@ export default function StudioApp() {
                 setDuration={setDuration}
                 isPlaying={isPlaying}
                 setIsPlaying={setIsPlaying}
+                trimRange={trimRange}
+                setTrimRange={setTrimRange}
+                setStyleConfig={setStyleConfig}
               />
             </div>
 
@@ -415,6 +433,7 @@ export default function StudioApp() {
                   styleConfig={styleConfig}
                   filename={videoFilename}
                   duration={duration}
+                  trimRange={trimRange}
                 />
               )}
             </div>

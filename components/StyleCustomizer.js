@@ -43,7 +43,7 @@ export default function StyleCustomizer({ styleConfig, setStyleConfig }) {
             <span>Styles 2.0 Studio</span>
           </h2>
           <span className="text-[10px] font-mono bg-[#BB232B]/20 text-[#F8F3F0] border border-[#BB232B]/40 px-2.5 py-0.5 rounded-full font-bold shadow-sm shadow-[#BB232B]/20">
-            9 Royal Presets
+            {STYLE_PRESETS.length} Royal Presets
           </span>
         </div>
 

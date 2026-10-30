@@ -224,7 +224,7 @@ export default function HomePage() {
         <div className="mt-8 flex flex-wrap items-center justify-center gap-6 text-xs text-[#F8F3F0]/60">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>100% Free Video Exports ($0)</span>
+            <span>Free Subtitle (SRT/VTT) Exports</span>
           </div>
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -399,9 +399,9 @@ export default function HomePage() {
             <div className="w-10 h-10 rounded-2xl bg-[#BB232B]/20 border border-[#BB232B]/50 flex items-center justify-center text-[#E0353E]">
               <Zap className="w-5 h-5" />
             </div>
-            <h3 className="text-base font-bold text-white">0-Credit Unlimited Exports</h3>
+            <h3 className="text-base font-bold text-white">Free Subtitle Exports & Rapid Video</h3>
             <p className="text-xs text-[#F8F3F0]/70 leading-relaxed">
-              Other tools charge you an export penalty or place watermarks. With ManaCaptions, high-resolution 1080p MP4 exports and SRT downloads are 100% Free forever.
+              Other tools charge you an export penalty or place watermarks. With ManaCaptions, high-resolution SRT downloads are 100% free, and MP4 rendering is fast and effortless.
             </p>
           </div>
 
@@ -452,7 +452,7 @@ export default function HomePage() {
             <div className="text-3xl font-black text-amber-400">03</div>
             <h3 className="text-base font-bold text-white">Pick Style &amp; Export</h3>
             <p className="text-xs text-[#F8F3F0]/65 leading-relaxed">
-              Choose Hormozi, Neon, or Karaoke style. Burn-in 1080p video with 0 credit fee and post straight to Instagram!
+              Choose Hormozi, Neon, or Karaoke style. Burn-in 1080p video with animated presets and post straight to Instagram!
             </p>
           </div>
         </div>

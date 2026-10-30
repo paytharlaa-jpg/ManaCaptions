@@ -39,6 +39,7 @@ export default function TranscriptEditor({
   const activeCardRef = useRef(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiToast, setAiToast] = useState(null);
+  const [editingWord, setEditingWord] = useState(null); // { segId, wordIdx, val }
 
   // Auto-scroll active segment into view ONLY when video is actively playing and user is not typing
   useEffect(() => {
@@ -642,16 +643,24 @@ export default function TranscriptEditor({
                   )}
                 </div>
 
-                {/* Timestamps inputs */}
+                {/* Timestamps & Per-Line Sync Nudge */}
                 <div className="flex items-center gap-1 font-mono text-xs">
                   <Clock className="w-3 h-3 text-[#F8F3F0]/40" />
+                  <button
+                    type="button"
+                    onClick={() => nudgeSegmentTime(seg.id, -0.1)}
+                    className="px-1 py-0.5 text-[9px] font-bold rounded bg-[#060919] hover:bg-[#20309A]/40 text-[#F8F3F0]/70 hover:text-[#F8F3F0] border border-[#20309A]/30 transition-all cursor-pointer"
+                    title="Nudge line 0.1s earlier"
+                  >
+                    -0.1s
+                  </button>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     value={seg.start}
                     onChange={e => updateSegmentTime(seg.id, "start", e.target.value)}
-                    className="w-14 px-1 py-0.5 bg-[#060919] border border-[#20309A]/40 rounded text-center text-[#F8F3F0] text-xs font-semibold focus:border-[#20309A] focus:outline-none"
+                    className="w-13 px-1 py-0.5 bg-[#060919] border border-[#20309A]/40 rounded text-center text-[#F8F3F0] text-xs font-semibold focus:border-[#20309A] focus:outline-none"
                     title="Start time"
                   />
                   <span className="text-[#F8F3F0]/40">→</span>
@@ -661,23 +670,42 @@ export default function TranscriptEditor({
                     min="0"
                     value={seg.end}
                     onChange={e => updateSegmentTime(seg.id, "end", e.target.value)}
-                    className="w-14 px-1 py-0.5 bg-[#060919] border border-[#20309A]/40 rounded text-center text-[#F8F3F0] text-xs font-semibold focus:border-[#20309A] focus:outline-none"
+                    className="w-13 px-1 py-0.5 bg-[#060919] border border-[#20309A]/40 rounded text-center text-[#F8F3F0] text-xs font-semibold focus:border-[#20309A] focus:outline-none"
                     title="End time"
                   />
+                  <button
+                    type="button"
+                    onClick={() => nudgeSegmentTime(seg.id, 0.1)}
+                    className="px-1 py-0.5 text-[9px] font-bold rounded bg-[#060919] hover:bg-[#20309A]/40 text-[#F8F3F0]/70 hover:text-[#F8F3F0] border border-[#20309A]/30 transition-all cursor-pointer"
+                    title="Nudge line 0.1s later"
+                  >
+                    +0.1s
+                  </button>
                   <span className="text-[10px] text-[#F8F3F0]/50 font-mono ml-0.5">
                     ({(seg.end - seg.start).toFixed(1)}s)
                   </span>
                 </div>
 
                 {/* Split, Merge, Delete Actions */}
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => splitSegment(seg.id)}
-                    className="p-1 rounded hover:bg-[#20309A]/20 text-[#F8F3F0]/60 hover:text-[#F8F3F0] cursor-pointer"
-                    title="Split line at midpoint"
-                  >
-                    <Scissors className="w-3.5 h-3.5" />
-                  </button>
+                <div className="flex items-center gap-1">
+                  {currentTime > (seg.start + 0.1) && currentTime < (seg.end - 0.1) ? (
+                    <button
+                      onClick={() => splitSegmentAtPlayhead(seg.id)}
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gradient-to-r from-[#BB232B] to-[#d82a34] text-[#F8F3F0] hover:scale-105 border border-[#BB232B] text-[10px] font-bold cursor-pointer transition-all shadow-md shadow-[#BB232B]/30"
+                      title={`Split at current playhead (${currentTime.toFixed(2)}s)`}
+                    >
+                      <Scissors className="w-3 h-3" />
+                      <span>Split @ {currentTime.toFixed(1)}s</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => splitSegment(seg.id)}
+                      className="p-1 rounded hover:bg-[#20309A]/20 text-[#F8F3F0]/60 hover:text-[#F8F3F0] cursor-pointer"
+                      title="Split line at midpoint"
+                    >
+                      <Scissors className="w-3.5 h-3.5" />
+                    </button>
+                  )}
 
                   {idx < segments.length - 1 && (
                     <button
@@ -807,24 +835,47 @@ export default function TranscriptEditor({
                 </div>
               </div>
 
-              {/* Interactive Word Chips */}
+              {/* Interactive Word Chips with Inline Editing */}
               {seg.words && seg.words.length > 0 && (
                 <div className="mt-2 pt-1.5 border-t border-[#20309A]/30 flex flex-wrap gap-1 items-center">
-                  <span className="text-[10px] font-mono text-[#F8F3F0]/50 mr-0.5">Words:</span>
+                  <span className="text-[10px] font-mono text-[#F8F3F0]/50 mr-0.5">Words (2x click to edit):</span>
                   {seg.words.map((w, wIdx) => {
                     const isWordActive = currentTime >= w.start && currentTime <= w.end;
+                    const isEditingThisWord = editingWord?.segId === seg.id && editingWord?.wordIdx === wIdx;
                     const wordLabel = scriptMode === "romanized" ? (w.romanized || w.word) : w.word;
+
+                    if (isEditingThisWord) {
+                      return (
+                        <input
+                          key={wIdx}
+                          autoFocus
+                          type="text"
+                          value={editingWord.val}
+                          onChange={e => setEditingWord({ ...editingWord, val: e.target.value })}
+                          onBlur={() => saveWordEdit(seg.id, wIdx, editingWord.val)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") saveWordEdit(seg.id, wIdx, editingWord.val);
+                            if (e.key === "Escape") setEditingWord(null);
+                          }}
+                          className="text-[11px] px-1.5 py-0.5 rounded bg-[#060919] border border-[#2e44d4] text-[#F8F3F0] font-semibold w-20 focus:outline-none shadow-sm"
+                        />
+                      );
+                    }
 
                     return (
                       <button
                         key={wIdx}
                         onClick={() => onSeek(w.start)}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setEditingWord({ segId: seg.id, wordIdx: wIdx, val: wordLabel });
+                        }}
                         className={`text-[11px] px-2 py-0.5 rounded transition-all cursor-pointer font-medium ${
                           isWordActive
                             ? "bg-gradient-to-r from-[#BB232B] to-[#d82a34] text-[#F8F3F0] font-bold shadow-md shadow-[#BB232B]/40 scale-105 border border-[#BB232B]"
                             : "bg-[#060919] text-[#F8F3F0]/70 hover:bg-[#20309A]/20 hover:text-[#F8F3F0] border border-[#20309A]/30"
                         }`}
-                        title={`Click to seek to ${w.start}s`}
+                        title={`Click to seek (${w.start}s). Double-click to edit word.`}
                       >
                         {wordLabel}
                       </button>

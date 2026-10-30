@@ -7,34 +7,28 @@ export const PRICING_RULES = {
   // Credits granted once upon signup (or initial migration for existing users)
   SIGNUP_BONUS_CREDITS: 10,
 
-  // Caption generation rate: 1 credit per minute (ceil: 1-60s = 1 credit, 61-120s = 2 credits)
-  CAPTION_CREDITS_PER_MINUTE: 1,
-
-  // Translation rate: 0.5 credits per minute per language (round up)
-  TRANSLATION_CREDITS_PER_MINUTE: 0.5,
-
-  // Burned-in MP4 video rendering & download: 100% Free once transcribed!
-  BURNED_VIDEO_EXPORT_CREDITS_PER_MINUTE: 0,
-
-  // Subtitle file download (SRT / VTT): Free for manual editing
+  // Subtitle file download (SRT / VTT): Free
   SRT_EXPORT_CREDITS: 0,
 
-  // Helper: Calculate caption generation credits (1 credit per minute)
+  // Helper: Calculate caption generation credits dynamically by video duration in seconds
   calculateCaptionCost: (durationSec) => {
     const sec = Math.max(1, Number(durationSec) || 30);
-    return Math.max(1, Math.ceil(sec / 60));
+    // Dynamic scaling by seconds length (e.g. up to 30s = 1, up to 60s = 2, up to 90s = 3, up to 120s = 4)
+    return Math.max(1, Math.ceil(sec / 30));
   },
 
   // Helper: Calculate translation credits from duration in seconds & language count
   calculateTranslationCost: (durationSec, numLanguages = 1) => {
-    const sec = Math.max(1, Number(durationSec) || 1);
-    const minutes = Math.ceil(sec / 60);
-    return Math.max(1, Math.ceil(minutes * PRICING_RULES.TRANSLATION_CREDITS_PER_MINUTE * numLanguages));
+    const sec = Math.max(1, Number(durationSec) || 30);
+    const base = Math.max(1, Math.ceil(sec / 30));
+    return Math.max(1, Math.ceil(base * 0.5 * numLanguages));
   },
 
-  // Helper: Calculate export cost (Free - 0 credits)
-  calculateExportCost: () => {
-    return 0;
+  // Helper: Calculate video render & download cost dynamically by video duration in seconds
+  calculateExportCost: (durationSec) => {
+    const sec = Math.max(1, Number(durationSec) || 30);
+    // Dynamic scaling by seconds length
+    return Math.max(1, Math.ceil(sec / 30));
   },
 
   // Video Constraints (Shorts & Reels Standard)
@@ -44,8 +38,8 @@ export const PRICING_RULES = {
   // Guest Trial Limits
   GUEST_TRIAL_LIMITS: {
     MAX_TRIALS_PER_SESSION: 1,
-    MAX_VIDEO_DURATION_SEC: 120, // 2 minutes max for trial
-    MAX_FILE_SIZE_MB: 100, // 100 MB max
+    MAX_VIDEO_DURATION_SEC: 120,
+    MAX_FILE_SIZE_MB: 100,
     MAX_TRIALS_PER_IP_24H: 2,
     CLEANUP_HOURS: 48
   }
@@ -62,10 +56,9 @@ export const CREDIT_PACKAGES = [
     popular: false,
     perCredit: "₹3.30 / credit",
     features: [
-      "30 Credits included",
-      "Up to 30 Reels / Shorts",
+      "30 Studio Credits",
       "Native Telugu + Bilingual transliteration",
-      "Unlimited 1080p MP4 exports (Free)",
+      "Full access to viral karaoke presets",
       "Free SRT & VTT subtitle downloads",
       "Credits never expire"
     ]
@@ -81,11 +74,9 @@ export const CREDIT_PACKAGES = [
     badge: "Most Popular",
     perCredit: "₹2.49 / credit",
     features: [
-      "100 Credits included",
-      "Up to 100 Reels / Shorts",
-      "Priority AI transcription queue",
-      "All viral karaoke animation styles",
-      "Unlimited 1080p MP4 exports (Free)",
+      "100 Studio Credits",
+      "Priority AI speech queue",
+      "All viral motion & karaoke presets",
       "Free SRT & VTT subtitle downloads",
       "Credits never expire"
     ]
@@ -96,17 +87,16 @@ export const CREDIT_PACKAGES = [
     credits: 350,
     priceInr: 699,
     priceDisplay: "₹699",
-    tagline: "Best value for agencies & heavy volume creators",
+    tagline: "Best value for agencies & high-volume creators",
     popular: false,
     badge: "Save 40%",
     perCredit: "₹1.99 / credit",
     features: [
-      "350 Credits included",
-      "Up to 350 Reels / Shorts",
-      "Fastest AI speech recognition",
-      "Custom brand colors & styling presets",
-      "Unlimited 1080p MP4 exports (Free)",
-      "VIP priority creator support",
+      "350 Studio Credits",
+      "Fastest dedicated speech recognition",
+      "All custom animated presets",
+      "Free SRT & VTT subtitle downloads",
+      "VIP creator support",
       "Credits never expire"
     ]
   }

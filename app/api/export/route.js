@@ -229,6 +229,10 @@ export async function POST(request) {
       const videoChunk = formData.get("chunk") || formData.get("video") || formData.get("file");
       const filename = formData.get("filename") || "telugu_reel";
       const durationSec = Number(formData.get("duration")) || 30;
+      const trimStart = Number(formData.get("trimStart")) || 0;
+      const trimEnd = Number(formData.get("trimEnd")) || 0;
+      const isTrimmed = trimStart > 0.05 || (trimEnd > trimStart && trimEnd < durationSec);
+      const effectiveSec = isTrimmed && trimEnd > trimStart ? Math.max(1, trimEnd - trimStart) : durationSec;
       const chunkIndex = Number(formData.get("chunkIndex") ?? 0);
       const totalChunks = Number(formData.get("totalChunks") ?? 1);
       const uploadId = String(formData.get("uploadId") || crypto.randomBytes(8).toString("hex")).replace(/[^a-zA-Z0-9_-]/g, "");
@@ -259,7 +263,7 @@ export async function POST(request) {
       }
 
       // All chunks have arrived! Proceed to credit check and FFmpeg burn
-      const cost = PRICING_RULES.calculateExportCost(durationSec);
+      const cost = PRICING_RULES.calculateExportCost(effectiveSec);
       let jobId = null;
       let deduction = null;
       if (cost > 0) {
@@ -267,7 +271,7 @@ export async function POST(request) {
           jobId = createJob({
             userId: user.id,
             jobType: "export",
-            videoDurationSec: durationSec,
+            videoDurationSec: effectiveSec,
             creditsCost: cost
           });
           deduction = deductCreditsAtomically(user.id, cost, "job", jobId);
@@ -288,7 +292,7 @@ export async function POST(request) {
         jobId = createJob({
           userId: user.id,
           jobType: "export",
-          videoDurationSec: durationSec,
+          videoDurationSec: effectiveSec,
           creditsCost: 0
         });
       }
@@ -356,10 +360,16 @@ export async function POST(request) {
           vfFilter += `,ass=${subsName}`;
         }
 
+        // Trim options for frame-accurate slice
+        const inputTrimArgs = trimStart > 0.05 ? ["-ss", String(trimStart)] : [];
+        const outputTrimArgs = (isTrimmed && effectiveSec > 0) ? ["-t", String(effectiveSec)] : [];
+
         // Attempt 1: High-Speed H.264 constrained to 1 thread (bypasses CloudLinux NPROC limit)
         const primaryArgs = [
           "-y",
+          ...inputTrimArgs,
           "-i", partPath,
+          ...outputTrimArgs,
           "-vf", vfFilter,
           "-threads", "1",
           "-c:v", "libx264",
@@ -381,7 +391,9 @@ export async function POST(request) {
           // Attempt 2: Fallback to MPEG-4 ASP (Built directly into FFmpeg, zero external lib dependency, works on any CloudLinux kernel!)
           const fallbackArgs = [
             "-y",
+            ...inputTrimArgs,
             "-i", partPath,
+            ...outputTrimArgs,
             "-vf", vfFilter,
             "-threads", "1",
             "-c:v", "mpeg4",
@@ -400,7 +412,9 @@ export async function POST(request) {
             // Attempt 3: If subtitle filter failed due to font, transcode cleanly with even dimensions
             const rescueArgs = [
               "-y",
+              ...inputTrimArgs,
               "-i", partPath,
+              ...outputTrimArgs,
               "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
               "-threads", "1",
               "-c:v", "libx264",

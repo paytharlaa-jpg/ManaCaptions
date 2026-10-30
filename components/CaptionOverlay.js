@@ -282,6 +282,9 @@ export default function CaptionOverlay({
               styleConfig.highlightColor || "#FF3B30";
           }
 
+          const hasGradient = isKaraokeActive && Boolean(styleConfig.gradientHighlight || styleConfig.animation === "gradient-flow");
+          const activeGradient = styleConfig.gradientHighlight || "linear-gradient(135deg, #FF512F 0%, #DD2476 100%)";
+
           return (
             <span
               key={idx}
@@ -295,16 +298,14 @@ export default function CaptionOverlay({
                   : ""
               }`}
               style={{
-                color: wordColor,
-                WebkitTextFillColor: wordColor,
+                color: hasGradient ? "transparent" : wordColor,
+                background: hasGradient ? activeGradient : (styleConfig.boxMode === "inline" ? boxBgColor : "transparent"),
+                WebkitBackgroundClip: hasGradient ? "text" : "initial",
+                WebkitTextFillColor: hasGradient ? "transparent" : (isNegative ? "#000000" : wordColor),
                 paintOrder: "stroke fill",
-                WebkitTextStroke: isNegative ? "none" : textStroke,
-                backgroundColor:
-                  styleConfig.boxMode === "inline"
-                    ? boxBgColor
-                    : "transparent",
+                WebkitTextStroke: (isNegative || hasGradient) ? "none" : textStroke,
                 transform: isKaraokeActive
-                  ? "scale(1.08)"
+                  ? (styleConfig.animation === "stomp" ? "scale(1.22) translateY(-2px)" : "scale(1.08)")
                   : "scale(1)"
               }}
             >

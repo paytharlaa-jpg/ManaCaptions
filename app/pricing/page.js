@@ -205,8 +205,8 @@ export default function PricingPage() {
       a: "Never! Your credits remain safely in your account forever until you use them. There are no monthly resets or forced usage limits."
     },
     {
-      q: "How are credits calculated per video?",
-      a: "Credits are charged based on video duration at a rate of 1 credit per minute of video (rounded up). Downloading SRT/VTT subtitle files and rendering the final burned-in 1080p MP4 video are 100% FREE (0 credits)! You only spend credits when generating AI speech-to-text recognition or Romanization."
+      q: "How are credits used?",
+      a: "Credits power AI speech recognition, dual-script Romanization, and high-definition video rendering. Downloading clean SRT and VTT subtitle files is always 100% free with zero credit requirement."
     },
     {
       q: "What payment methods are supported?",
@@ -281,7 +281,7 @@ export default function PricingPage() {
           </h1>
 
           <p className="text-sm sm:text-base text-[#F8F3F0]/70 leading-relaxed max-w-2xl mx-auto">
-            Top up credits whenever you need. Every package includes dual-script Telugu subtitles, song lyrics synchronization, and 1080p MP4 exports. Credits never expire.
+            Top up credits whenever you need. Every package includes dual-script Telugu subtitles, viral animated presets, and priority creator rendering. Credits never expire.
           </p>
 
           {errorMessage && (
