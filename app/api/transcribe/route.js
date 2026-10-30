@@ -698,9 +698,9 @@ The detectedLanguage value must be exactly one of: "telugu", "english", or "mixe
 }`;
 
   const modelsToTry = [
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-3.5-flash-lite"
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.0-flash-lite"
   ];
   const timeoutMs = Math.max(120000, Math.ceil(roundedDuration * 2000));
   let lastError = null;
@@ -1082,7 +1082,7 @@ async function ensureDualScriptNative(segments) {
       }));
 
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
         {
           method: "POST",
           signal: AbortSignal.timeout(30000),

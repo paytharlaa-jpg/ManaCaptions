@@ -28,7 +28,8 @@ export default function ExportModal({
   currentFile = null,
   styleConfig,
   filename = "telugu_reel",
-duration = 0
+  duration = 0,
+  trimRange = { start: 0, end: 0 }
 }) {
   const { user, updateCreditsBalance } = useAuth();
   const [costModalOpen, setCostModalOpen] = useState(false);
@@ -491,7 +492,17 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
         }
       };
 
-      video.onended = stopRecording;
+      video.onended = () => {
+        clearTimeout(safetyTimeout);
+        stopRecording();
+      };
+
+      const safetyTimeout = setTimeout(() => {
+        if (isRecording) {
+          console.warn("Safety timeout reached in client recorder.");
+          stopRecording();
+        }
+      }, Math.max(8000, ((duration || 10) + 4) * 1000));
 
       mediaRecorder.onstop = async () => {
         if (audioCtx && audioCtx.state !== "closed") {
