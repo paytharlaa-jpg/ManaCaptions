@@ -87,6 +87,26 @@ export async function GET(request) {
     // Diagnostic check for production FFmpeg environment
     if (searchParams.get("check") === "ffmpeg") {
       const ffmpegBinary = getFfmpegBinary();
+      let teluguFont = "";
+
+try {
+  const fontCheck = spawnSync(
+    "fc-match",
+    ["-f", "%{family}|%{file}\n", ":lang=te"],
+    {
+      encoding: "utf8",
+      timeout: 10000
+    }
+  );
+
+  teluguFont =
+    fontCheck.stdout ||
+    fontCheck.stderr ||
+    fontCheck.error?.message ||
+    "No font information returned";
+} catch (err) {
+  teluguFont = err.message;
+}
       let ver = "";
       let enc = "";
       let filters = "";
@@ -116,8 +136,10 @@ try {
      return NextResponse.json({
   binary: ffmpegBinary,
   version: ver,
+   teluguFont,
   hasLibx264: enc.includes("libx264"),
   hasAac: enc.includes("aac"),
+
 
   hasAssFilter: filters
     .split("\n")
