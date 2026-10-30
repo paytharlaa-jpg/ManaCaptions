@@ -280,9 +280,24 @@ export async function POST(request) {
         const outputPath = path.join(tmpDir, outputName);
         const subsPath = path.join(tmpDir, subsName);
 
-        if (subtitlesAss) {
-          await fs.writeFile(subsPath, String(subtitlesAss), "utf8");
-        }
+       if (subtitlesAss) {
+  const assText = String(subtitlesAss);
+
+  await fs.writeFile(subsPath, assText, "utf8");
+
+  const stats = await fs.stat(subsPath);
+
+  console.info("[ManaCaptions] ASS subtitle diagnostics:", {
+    file: subsName,
+    fileExists: stats.isFile(),
+    fileSize: stats.size,
+    subtitleLength: assText.length,
+    containsTelugu: /[\u0C00-\u0C7F]/.test(assText),
+    containsDialogue: assText.includes("Dialogue:")
+  });
+} else {
+  console.error("[ManaCaptions] No ASS subtitles received!");
+}
 
         // Execute FFmpeg using bundled ffmpeg-static binary
         const ffmpegBinary = getFfmpegBinary();
@@ -339,7 +354,7 @@ export async function POST(request) {
         try {
           await runFfmpegAttempt(primaryArgs);
         } catch (attempt1Err) {
-          console.warn("Attempt 1 (libx264 ultrafast) failed:", attempt1Err.message);
+          console.error("[ManaCaptions] Attempt 1 failed:", attempt1Err.message);
 
           // Attempt 2: Fallback to MPEG-4 ASP (Built directly into FFmpeg, zero external lib dependency, works on any CloudLinux kernel!)
           const fallbackArgs = [
@@ -358,7 +373,7 @@ export async function POST(request) {
           try {
             await runFfmpegAttempt(fallbackArgs);
           } catch (attempt2Err) {
-            console.warn("Attempt 2 (mpeg4) failed:", attempt2Err.message);
+           console.error("[ManaCaptions] Attempt 2 failed:", attempt2Err.message);
 
             // Attempt 3: If subtitle filter failed due to font, transcode cleanly with even dimensions
             const rescueArgs = [
