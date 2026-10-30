@@ -22,8 +22,6 @@ import { useAuth } from "@/lib/authContext";
 import { generateAssSubtitles } from "@/lib/assGenerator";
 
 export default function ExportModal({
-  isOpen = true,
-  onClose = () => {},
   segments,
   scriptMode,
   videoSrc,
@@ -33,7 +31,6 @@ export default function ExportModal({
 duration = 0
 }) {
   const { user, updateCreditsBalance } = useAuth();
-  if (!isOpen) return null;
   const [costModalOpen, setCostModalOpen] = useState(false);
   const [guestAuthOpen, setGuestAuthOpen] = useState(false);
   const [guestAction, setGuestAction] = useState("download_video");
@@ -484,7 +481,6 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
 
       const stopRecording = () => {
         if (!isRecording) return;
-        clearTimeout(safetyTimer);
         isRecording = false;
         if (typeof video.cancelVideoFrameCallback === "function" && frameCallbackId) {
           video.cancelVideoFrameCallback(frameCallbackId);
@@ -547,7 +543,7 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
 
       // Start recording with 100ms slices for smooth memory streaming
       mediaRecorder.start(100);
-      video.currentTime = isTrimmed ? trimStart : 0;
+      video.currentTime = 0;
       setExportStatusText("Compositing synchronized frames...");
 
       try {
@@ -556,14 +552,6 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
         video.muted = true;
         await video.play();
       }
-
-      // Hard timeout safety: guaranteed completion even if video.onended doesn't fire
-      const safetyTimer = setTimeout(() => {
-        if (isRecording) {
-          console.warn("Safety timer finished recording");
-          stopRecording();
-        }
-      }, (effectiveDuration + 4) * 1000);
 
       // Draw frames using requestVideoFrameCallback (zero dropped frames!)
       const renderNextFrame = () => {
@@ -575,9 +563,7 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
           setExportProgress(Math.min(95, Math.round((video.currentTime / duration) * 95)));
         }
 
-        const targetEnd = isTrimmed && trimEnd > trimStart ? trimEnd : duration;
-        if (video.ended || video.currentTime >= targetEnd - 0.05) {
-          clearTimeout(safetyTimer);
+        if (video.ended || video.currentTime >= duration - 0.05) {
           stopRecording();
           return;
         }
@@ -747,23 +733,13 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-sm animate-in fade-in select-none">
-      <div className="w-full max-w-2xl max-h-[90vh] bg-[#12131A] border border-[#232634] rounded-2xl shadow-2xl p-5 sm:p-6 overflow-y-auto space-y-5 relative text-white">
-        {/* Modal Close Button */}
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-4 top-4 p-1.5 rounded-lg text-[#8A8E9F] hover:text-white hover:bg-[#232634] transition-all cursor-pointer z-10"
-        >
-          ✕
-        </button>
-
-        {/* Header */}
-        <div>
-          <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <Film className="w-4 h-4 text-[#E5C583]" />
-            <span>Export & Download Video</span>
-          </h2>
+    <div className="flex flex-col h-full bg-[#0a0f26]/85 backdrop-blur-xl rounded-2xl border border-[#20309A]/40 p-5 overflow-y-auto space-y-6 min-h-0 shadow-2xl shadow-[#20309A]/15 relative">
+      {/* Header */}
+      <div>
+        <h2 className="text-base font-bold text-[#F8F3F0] flex items-center gap-2">
+          <Film className="w-4 h-4 text-[#BB232B]" />
+          <span>Export & Download Studio</span>
+        </h2>
         <p className="text-xs text-[#F8F3F0]/60 mt-1">
           Export your post-ready burned video or download subtitle files for Instagram, YouTube, and Facebook.
         </p>
@@ -1088,7 +1064,6 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
           }
         }}
       />
-      </div>
     </div>
   );
 }

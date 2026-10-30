@@ -218,8 +218,12 @@ export async function POST(request) {
     // 1. Video Transcode (Browser recorded frames & audio -> Genuine H.264/AAC MP4)
     if (contentType.includes("multipart/form-data")) {
       const { authenticated, user } = getAuthenticatedUser(request);
-      // If user is guest, provide trial allowance so export never fails
-      const effectiveUser = user || { id: "guest_trial", credits_balance: 3, plan: "free" };
+      if (!authenticated || !user) {
+        return NextResponse.json(
+          { ok: false, error: "Please sign in to export captioned videos.", code: "AUTH_REQUIRED" },
+          { status: 401 }
+        );
+      }
 
       const formData = await request.formData();
       const videoChunk = formData.get("chunk") || formData.get("video") || formData.get("file");
@@ -265,12 +269,12 @@ export async function POST(request) {
       if (cost > 0) {
         try {
           jobId = createJob({
-            userId: effectiveUser.id,
+            userId: user.id,
             jobType: "export",
             videoDurationSec: effectiveSec,
             creditsCost: cost
           });
-          deduction = deductCreditsAtomically(effectiveUser.id, cost, "job", jobId);
+          deduction = deductCreditsAtomically(user.id, cost, "job", jobId);
         } catch (creditErr) {
           await fs.unlink(partPath).catch(() => {});
           return NextResponse.json(
@@ -279,14 +283,14 @@ export async function POST(request) {
               error: creditErr.message || "Insufficient credits",
               code: "INSUFFICIENT_CREDITS",
               cost,
-              currentBalance: effectiveUser.credits_balance
+              currentBalance: user.credits_balance
             },
             { status: 402 }
           );
         }
       } else {
         jobId = createJob({
-          userId: effectiveUser.id,
+          userId: user.id,
           jobType: "export",
           videoDurationSec: effectiveSec,
           creditsCost: 0
@@ -302,41 +306,24 @@ export async function POST(request) {
         const outputPath = path.join(tmpDir, outputName);
         const subsPath = path.join(tmpDir, subsName);
 
-       const srtName = `tc_subs_${tempId}.srt`;
-       const srtPath = path.join(tmpDir, srtName);
-
        if (subtitlesAss) {
-         const assText = String(subtitlesAss);
-         await fs.writeFile(subsPath, assText, "utf8");
+  const assText = String(subtitlesAss);
 
-         // Also generate a clean SRT fallback file from ASS dialogues
-         let srtFallback = "";
-         const diagLines = assText.split("\n").filter(l => l.startsWith("Dialogue:"));
-         diagLines.forEach((line, idx) => {
-           const parts = line.split(",");
-           if (parts.length >= 10) {
-             const startStr = parts[1].trim();
-             const endStr = parts[2].trim();
-             const textPart = parts.slice(9).join(",").replace(/\{[^}]*\}/g, "").trim();
-             srtFallback += `${idx + 1}\n0${startStr}0 --> 0${endStr}0\n${textPart}\n\n`;
-           }
-         });
-         if (srtFallback) {
-           await fs.writeFile(srtPath, srtFallback, "utf8");
-         }
+  await fs.writeFile(subsPath, assText, "utf8");
 
-         const stats = await fs.stat(subsPath);
-         console.info("[ManaCaptions] ASS subtitle diagnostics:", {
-           file: subsName,
-           fileExists: stats.isFile(),
-           fileSize: stats.size,
-           subtitleLength: assText.length,
-           containsTelugu: /[\u0C00-\u0C7F]/.test(assText),
-           containsDialogue: assText.includes("Dialogue:")
-         });
-       } else {
-         console.error("[ManaCaptions] No ASS subtitles received!");
-       }
+  const stats = await fs.stat(subsPath);
+
+  console.info("[ManaCaptions] ASS subtitle diagnostics:", {
+    file: subsName,
+    fileExists: stats.isFile(),
+    fileSize: stats.size,
+    subtitleLength: assText.length,
+    containsTelugu: /[\u0C00-\u0C7F]/.test(assText),
+    containsDialogue: assText.includes("Dialogue:")
+  });
+} else {
+  console.error("[ManaCaptions] No ASS subtitles received!");
+}
 
         // Execute FFmpeg using bundled ffmpeg-static binary
         const ffmpegBinary = getFfmpegBinary();
@@ -403,14 +390,13 @@ if (subtitlesAss) {
         } catch (attempt1Err) {
           console.error("[ManaCaptions] Attempt 1 failed:", attempt1Err.message);
 
-          // Attempt 2: If ass filter failed, fall back to subtitles filter with SRT!
-          const srtFilter = `scale=trunc(iw/2)*2:trunc(ih/2)*2,subtitles=${srtName}`;
+          // Attempt 2: Fallback to MPEG-4 ASP (Built directly into FFmpeg, zero external lib dependency, works on any CloudLinux kernel!)
           const fallbackArgs = [
             "-y",
             ...inputTrimArgs,
             "-i", partPath,
             ...outputTrimArgs,
-            "-vf", srtFilter,
+            "-vf", vfFilter,
             "-threads", "1",
             "-c:v", "mpeg4",
             "-q:v", "3"
@@ -454,7 +440,6 @@ if (subtitlesAss) {
         await fs.unlink(outputPath).catch(() => {});
         if (subtitlesAss) {
           await fs.unlink(subsPath).catch(() => {});
-          await fs.unlink(srtPath).catch(() => {});
         }
 
         // Exact naming requested by creator: {current_filename_without_ext}_manacaption.mp4
@@ -480,12 +465,12 @@ if (subtitlesAss) {
           filename: safeFilename,
           downloadUrl: `/api/export?id=${fileId}&name=${encodeURIComponent(safeFilename)}`,
           creditsUsed: cost,
-          creditsRemaining: deduction ? deduction.newBalance : effectiveUser.credits_balance
+          creditsRemaining: deduction ? deduction.newBalance : user.credits_balance
         });
       } catch (err) {
         await fs.unlink(partPath).catch(() => {});
         console.warn("Video export failed, refunding credits:", err.message);
-        if (cost > 0) refundCreditsAtomically(effectiveUser.id, cost, "refund", jobId);
+        if (cost > 0) refundCreditsAtomically(user.id, cost, "refund", jobId);
         if (jobId) updateJobStatus(jobId, "failed", err.message);
         return NextResponse.json(
           { ok: false, error: err.message || "Video export transcode failed." },

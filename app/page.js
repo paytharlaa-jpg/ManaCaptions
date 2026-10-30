@@ -175,21 +175,30 @@ export default function HomePage() {
         </div>
 
         {/* Hero Top Pill */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#181A24] border border-[#2B2F42] text-[11px] font-bold text-[#E5C583] uppercase tracking-wider mb-4 shadow-sm">
-          <span>FOR REELS AND SHORTS</span>
+        <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-[#0D1333] border border-[#20309A]/60 text-xs font-bold text-[#F8F3F0] shadow-[0_0_20px_rgba(32,48,154,0.3)] mb-6 hover:scale-105 transition-transform cursor-default">
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#BB232B] opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#E0353E]" />
+          </span>
+          <span>The #1 AI Telugu Auto-Caption Platform</span>
+          <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-[#20309A]/40 text-[#384DE8] border border-[#20309A]/60 font-bold">
+            Dual-Script
+          </span>
         </div>
 
         {/* Main Headline */}
-        <h1 className="text-4xl sm:text-6xl font-black text-white tracking-tight leading-[1.1] max-w-4xl">
-          Content studio for{" "}
-          <span className="bg-gradient-to-r from-[#F3E8CE] via-[#E5C583] to-[#D4AF37] bg-clip-text text-transparent">
-            Desi creators
+        <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black text-[#F8F3F0] tracking-tight leading-[1.1] max-w-4xl">
+          Create Viral Telugu Captions in{" "}
+          <span className="bg-gradient-to-r from-[#384DE8] via-[#F8F3F0] to-[#E0353E] bg-clip-text text-transparent drop-shadow-[0_0_35px_rgba(56,77,232,0.4)]">
+            Seconds
           </span>
         </h1>
 
         {/* Subtitle */}
-        <p className="mt-4 text-sm sm:text-base text-[#9A9DAE] max-w-2xl leading-relaxed font-normal">
-          Built for Telugu first: Tanglish or తెలుగు, auto-transcription, title, caption, hashtags and thumbnail preview in seconds.
+        <p className="mt-6 text-sm sm:text-lg text-[#F8F3F0]/75 max-w-2xl leading-relaxed font-normal">
+          Stop wasting hours typing subtitles manually. Upload your Short or Reel to generate{" "}
+          <strong className="text-white font-semibold">Pure Telugu (తెలుగు)</strong> and{" "}
+          <strong className="text-white font-semibold">Romanized English (&apos;Mana Videolaku&apos;)</strong> captions with active word-level karaoke animation.
         </p>
 
         {/* CTAs */}
