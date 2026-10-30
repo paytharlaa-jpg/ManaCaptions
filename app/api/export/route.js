@@ -356,9 +356,11 @@ export async function POST(request) {
 
         // Filter chain: scale to even dimensions and burn styled ASS captions
         let vfFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
-        if (subtitlesAss) {
-          vfFilter += `,ass=${subsName}`;
-        }
+
+if (subtitlesAss) {
+  const fontDir = path.join(process.cwd(), "public", "fonts");
+  vfFilter += `,ass=${subsName}:fontsdir='${fontDir}'`;
+}
 
         // Trim options for frame-accurate slice
         const inputTrimArgs = trimStart > 0.05 ? ["-ss", String(trimStart)] : [];
