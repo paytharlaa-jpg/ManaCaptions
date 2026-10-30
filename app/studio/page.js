@@ -172,7 +172,7 @@ export default function StudioApp() {
         setDuration(prev => Math.max(prev || 0, durationSec || 0, lastSeg ? (lastSeg.end + 0.5) : 0));
 
         const hasTelugu = paced.some(s => /[\u0C00-\u0C7F]/.test(s.text));
-        setScriptMode(hasTelugu ? "both" : "romanized");
+        setScriptMode(hasTelugu ? "telugu" : "romanized");
 
         if (data.creditsRemaining !== undefined && updateCreditsBalance) {
           updateCreditsBalance(data.creditsRemaining);

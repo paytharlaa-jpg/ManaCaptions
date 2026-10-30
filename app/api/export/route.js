@@ -236,7 +236,7 @@ export async function POST(request) {
       const durationSec = Number(formData.get("duration")) || 30;
       const trimStart = Number(formData.get("trimStart")) || 0;
       const trimEnd = Number(formData.get("trimEnd")) || 0;
-      const isTrimmed = trimStart > 0.05 || (trimEnd > trimStart && trimEnd < durationSec);
+      const isTrimmed = trimStart > 0.05 || (trimEnd > trimStart && trimEnd < (durationSec - 0.5));
       const effectiveSec = isTrimmed && trimEnd > trimStart ? Math.max(1, trimEnd - trimStart) : durationSec;
       const chunkIndex = Number(formData.get("chunkIndex") ?? 0);
       const totalChunks = Number(formData.get("totalChunks") ?? 1);
@@ -363,9 +363,20 @@ export async function POST(request) {
         let vfFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
 
 if (subtitlesAss) {
-  const cleanSubs = subsPath.split(path.sep).join("/").replace(":", "\\:");
-  const cleanFontDir = path.resolve(process.cwd(), "public", "fonts").split(path.sep).join("/").replace(":", "\\:");
-  vfFilter += `,ass=filename=${cleanSubs}:fontsdir=${cleanFontDir}`;
+  // Copy NotoSansTelugu.ttf to tmpDir so libass loads it directly from the current working directory
+  const fontSrc = path.join(process.cwd(), "public", "fonts", "NotoSansTelugu.ttf");
+  if (fsSync.existsSync(fontSrc)) {
+    const fontDst = path.join(tmpDir, "NotoSansTelugu.ttf");
+    try {
+      if (!fsSync.existsSync(fontDst)) {
+        await fs.copyFile(fontSrc, fontDst);
+      }
+    } catch (copyErr) {
+      console.warn("Font copy notice:", copyErr.message);
+    }
+  }
+  // With cwd set to tmpDir, passing subsName with fontsdir=. avoids all Windows drive letter colons and path escaping bugs
+  vfFilter += `,ass=${subsName}:fontsdir=.`;
 }
 
         // Trim options for frame-accurate slice

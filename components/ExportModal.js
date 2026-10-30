@@ -39,7 +39,7 @@ export default function ExportModal({
   const lastSegEnd = segments && segments.length > 0 ? (segments[segments.length - 1]?.end || 0) : 0;
   const trimStart = Math.max(0, trimRange?.start || 0);
   const trimEnd = (trimRange?.end && trimRange.end > 0) ? trimRange.end : (duration > 0 ? duration : lastSegEnd || 30);
-  const isTrimmed = trimStart > 0.05 || (trimEnd < (duration > 0 ? duration - 0.05 : 9999));
+  const isTrimmed = trimStart > 0.05 || (trimEnd < (duration > 0 ? duration - 0.5 : 9999));
   const effectiveDuration = isTrimmed && trimEnd > trimStart ? Math.max(1, trimEnd - trimStart) : (duration > 0 ? duration : (lastSegEnd > 0 ? lastSegEnd : 30));
   const exportCost = PRICING_RULES.calculateExportCost(effectiveDuration);
 
