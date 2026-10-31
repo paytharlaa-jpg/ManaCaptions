@@ -87,7 +87,6 @@ function generateHooksLocal(segments) {
 function translateTeluguLocal(segments) {
   return segments.map(seg => {
     const raw = seg.text || seg.romanizedText || "";
-    // If it already has Telugu script, retain it
     if (/[\u0C00-\u0C7F]/.test(raw)) {
       return seg;
     }
@@ -108,6 +107,37 @@ function translateTeluguLocal(segments) {
       words: newWords
     };
   });
+}
+
+/**
+ * Robust Gemini model caller with automatic model fallback
+ */
+async function callGemini(geminiKey, prompt, timeoutMs = 8000) {
+  const models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-lite-latest"];
+  for (const model of models) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          signal: AbortSignal.timeout(timeoutMs),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json" }
+          })
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return text;
+      }
+    } catch {
+      // try next model
+    }
+  }
+  return null;
 }
 
 /**
@@ -132,7 +162,7 @@ async function translateWithGroq(segments) {
         messages: [
           {
             role: "system",
-            content: 'You are an expert Telugu subtitle converter for video reels. Convert English or Telugish lines into authentic Native Telugu script (తెలుగు లిపి) and keep verbatim spoken line in romanizedText. CRITICAL: DO NOT analyze the speaker meaning, do not rephrase or summarize. Give the captions as it is as the speaker says. Return valid JSON schema: {"segments": [{"id": "...", "text": "తెలుగు లిపి", "romanizedText": "verbatim spoken words"}]}'
+            content: 'You are an expert Telugu subtitle converter for video reels. Convert English or Telugish lines into authentic Native Telugu script (తెలుగు లిపి) with zero spelling mistakes and keep verbatim spoken line in romanizedText. Keep standard creator terms in standard Telugu spelling: "వీడియో", "రీల్స్", "ఫ్రెండ్స్", "షేర్", "ఫాలో", "లైక్", "సబ్‌స్క్రైబ్", "ఛానల్", "టిప్స్", "కామెంట్". CRITICAL: DO NOT analyze the speaker meaning, do not rephrase or summarize. Return valid JSON schema: {"segments": [{"id": "...", "text": "తెలుగు లిపి", "romanizedText": "verbatim spoken words"}]}'
           },
           {
             role: "user",
@@ -194,7 +224,6 @@ export async function POST(request) {
 
     // 1. FAST TRANSLATION TO TELUGU SCRIPT
     if (action === "translate_telugu") {
-      // 1. Authenticate user
       const { authenticated, user } = getAuthenticatedUser(request);
       if (!authenticated || !user) {
         return NextResponse.json(
@@ -203,7 +232,6 @@ export async function POST(request) {
         );
       }
 
-      // 2. Calculate translation cost from duration
       const maxEnd = segments.reduce((max, s) => Math.max(max, s.end || 0), 0);
       const cost = PRICING_RULES.calculateTranslationCost(maxEnd, 1);
 
@@ -247,7 +275,8 @@ export async function POST(request) {
         if (!resultSegments && geminiKey) {
           try {
             const prompt = `You are an expert Telugu subtitle translator for Instagram Reels.
-Convert or translate each line into natural, engaging Telugu script (తెలుగు లిపి) and also provide the Romanized pronunciation.
+Convert or translate each line into natural, engaging Telugu script (తెలుగు లిపి) with strict, pristine Telugu spelling and grammar (సరైన గుణింతాలు, ఒత్తులు, దీర్ఘాలు). Zero spelling mistakes.
+Keep conversational creator terms in standard Telugu spelling: "వీడియో", "రీల్స్", "ఫ్రెండ్స్", "షేర్", "ఫాలో", "లైక్", "సబ్‌స్క్రైబ్", "ఛానల్", "టిప్స్", "కామెంట్".
 Lines:
 ${JSON.stringify(segments.map(s => ({ id: s.id, text: s.text || s.romanizedText })))}
 
@@ -257,47 +286,32 @@ Return ONLY valid JSON:
     { "id": "...", "text": "తెలుగు వాక్యం ఇక్కడ", "romanizedText": "Romanized English" }
   ]
 }`;
-            const geminiRes = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiKey}`,
-              {
-                method: "POST",
-                signal: AbortSignal.timeout(8000),
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contents: [{ parts: [{ text: prompt }] }],
-                  generationConfig: { responseMimeType: "application/json" }
-                })
-              }
-            );
-            if (geminiRes.ok) {
-              const geminiData = await geminiRes.json();
-              const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
-              if (responseText) {
-                const parsed = JSON.parse(responseText);
-                if (parsed.segments && Array.isArray(parsed.segments)) {
-                  resultSegments = segments.map(seg => {
-                    const match = parsed.segments.find(p => p.id === seg.id);
-                    if (match && match.text) {
-                      const teWords = match.text.trim().split(/\s+/).filter(Boolean);
-                      const dur = Math.max(0.1, (seg.end || 2.5) - (seg.start || 0));
-                      const wDur = dur / Math.max(1, teWords.length);
-                      const newWords = teWords.map((w, i) => ({
-                        word: w,
-                        romanized: w,
-                        start: Number(((seg.start || 0) + i * wDur).toFixed(2)),
-                        end: Number(((seg.start || 0) + (i + 1) * wDur).toFixed(2))
-                      }));
-                      return {
-                        ...seg,
-                        text: match.text,
-                        romanizedText: match.romanizedText || seg.romanizedText,
-                        words: newWords
-                      };
-                    }
-                    return seg;
-                  });
-                  source = "gemini";
-                }
+            const responseText = await callGemini(geminiKey, prompt, 8000);
+            if (responseText) {
+              const parsed = JSON.parse(responseText);
+              if (parsed.segments && Array.isArray(parsed.segments)) {
+                resultSegments = segments.map(seg => {
+                  const match = parsed.segments.find(p => p.id === seg.id);
+                  if (match && match.text) {
+                    const teWords = match.text.trim().split(/\s+/).filter(Boolean);
+                    const dur = Math.max(0.1, (seg.end || 2.5) - (seg.start || 0));
+                    const wDur = dur / Math.max(1, teWords.length);
+                    const newWords = teWords.map((w, i) => ({
+                      word: w,
+                      romanized: w,
+                      start: Number(((seg.start || 0) + i * wDur).toFixed(2)),
+                      end: Number(((seg.start || 0) + (i + 1) * wDur).toFixed(2))
+                    }));
+                    return {
+                      ...seg,
+                      text: match.text,
+                      romanizedText: match.romanizedText || seg.romanizedText,
+                      words: newWords
+                    };
+                  }
+                  return seg;
+                });
+                source = "gemini";
               }
             }
           } catch (geminiErr) {
@@ -331,7 +345,6 @@ Return ONLY valid JSON:
 
     // 2. AUTO EMOJI
     if (action === "auto_emoji") {
-      // Try Gemini or Groq
       if (geminiKey) {
         try {
           const prompt = `You are a viral social media video editor for Telugu Reels/Shorts.
@@ -343,30 +356,15 @@ Return ONLY valid JSON matching this schema:
 Input Segments:
 ${JSON.stringify(segments.map(s => ({ id: s.id, text: s.text, romanizedText: s.romanizedText })))}`;
 
-          const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiKey}`,
-            {
-              method: "POST",
-              signal: AbortSignal.timeout(8000),
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json" }
-              })
-            }
-          );
-          if (geminiRes.ok) {
-            const geminiData = await geminiRes.json();
-            const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (responseText) {
-              const parsed = JSON.parse(responseText);
-              if (parsed.segments) {
-                const updated = segments.map(seg => {
-                  const match = parsed.segments.find(p => p.id === seg.id);
-                  return match ? { ...seg, text: match.text, romanizedText: match.romanizedText } : seg;
-                });
-                return NextResponse.json({ ok: true, segments: updated, source: "gemini" });
-              }
+          const responseText = await callGemini(geminiKey, prompt, 8000);
+          if (responseText) {
+            const parsed = JSON.parse(responseText);
+            if (parsed.segments) {
+              const updated = segments.map(seg => {
+                const match = parsed.segments.find(p => p.id === seg.id);
+                return match ? { ...seg, text: match.text, romanizedText: match.romanizedText } : seg;
+              });
+              return NextResponse.json({ ok: true, segments: updated, source: "gemini" });
             }
           }
         } catch (geminiErr) {
@@ -392,8 +390,9 @@ Examine each caption segment and fix all spelling mistakes, typographical errors
 
 STRICT INSTRUCTIONS:
 1. Fix spelling mistakes and typos in BOTH "text" (Telugu script) and "romanizedText" (translucent spoken line).
-2. DO NOT rewrite, paraphrase, or change the spoken words! Keep the exact words verbatim as uttered by the speaker, only correcting misspelled letters, typos, and punctuation.
-3. Preserve the exact segment IDs.
+2. Standard Telugu creator spellings: "వీడియో", "రీల్స్", "ఫ్రెండ్స్", "షేర్", "ఫాలో", "లైక్", "సబ్‌స్క్రైబ్", "ఛానల్", "టిప్స్", "కామెంట్", "అప్‌డేట్".
+3. DO NOT rewrite, paraphrase, or change the spoken words! Keep the exact words verbatim as uttered by the speaker, only correcting misspelled letters, typos, and punctuation.
+4. Preserve the exact segment IDs.
 
 Input Segments:
 ${JSON.stringify(segments.map(s => ({ id: s.id, text: s.text, romanizedText: s.romanizedText })))}
@@ -409,39 +408,24 @@ Return ONLY valid JSON matching this schema:
   ]
 }`;
 
-          const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiKey}`,
-            {
-              method: "POST",
-              signal: AbortSignal.timeout(12000),
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json" }
-              })
-            }
-          );
-          if (geminiRes.ok) {
-            const geminiData = await geminiRes.json();
-            const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (responseText) {
-              const parsed = JSON.parse(responseText);
-              if (parsed.segments && Array.isArray(parsed.segments)) {
-                const updated = segments.map(seg => {
-                  const match = parsed.segments.find(p => p.id === seg.id);
-                  if (match) {
-                    const nextText = match.text || seg.text;
-                    const nextRomanized = match.romanizedText || seg.romanizedText;
-                    return {
-                      ...seg,
-                      text: nextText,
-                      romanizedText: nextRomanized
-                    };
-                  }
-                  return seg;
-                });
-                return NextResponse.json({ ok: true, segments: updated, source: "gemini" });
-              }
+          const responseText = await callGemini(geminiKey, prompt, 10000);
+          if (responseText) {
+            const parsed = JSON.parse(responseText);
+            if (parsed.segments && Array.isArray(parsed.segments)) {
+              const updated = segments.map(seg => {
+                const match = parsed.segments.find(p => p.id === seg.id);
+                if (match) {
+                  const nextText = match.text || seg.text;
+                  const nextRomanized = match.romanizedText || seg.romanizedText;
+                  return {
+                    ...seg,
+                    text: nextText,
+                    romanizedText: nextRomanized
+                  };
+                }
+                return seg;
+              });
+              return NextResponse.json({ ok: true, segments: updated, source: "gemini" });
             }
           }
         } catch (geminiErr) {
@@ -465,7 +449,7 @@ Return ONLY valid JSON matching this schema:
               messages: [
                 {
                   role: "system",
-                  content: 'You are a Telugu & English subtitle proofreader. Fix spelling mistakes and typos in both text (Telugu script) and romanizedText (English/translucent) without changing the words or meaning. Return JSON schema: {"segments": [{"id": "...", "text": "...", "romanizedText": "..."}]}'
+                  content: 'You are a Telugu & English subtitle proofreader. Fix spelling mistakes and typos in both text (Telugu script) and romanizedText (English/translucent) without changing the words or meaning. Ensure standard Telugu spellings: "వీడియో", "రీల్స్", "ఫ్రెండ్స్", "షేర్", "ఫాలో", "లైక్", "సబ్‌స్క్రైబ్", "ఛానల్", "టిప్స్", "కామెంట్". Return JSON schema: {"segments": [{"id": "...", "text": "...", "romanizedText": "..."}]}'
                 },
                 {
                   role: "user",
@@ -521,25 +505,10 @@ Return ONLY valid JSON:
   "hashtags": ["#tag1", "#tag2", ...]
 }`;
 
-          const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiKey}`,
-            {
-              method: "POST",
-              signal: AbortSignal.timeout(8000),
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json" }
-              })
-            }
-          );
-          if (geminiRes.ok) {
-            const geminiData = await geminiRes.json();
-            const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (responseText) {
-              const parsed = JSON.parse(responseText);
-              return NextResponse.json({ ok: true, ...parsed, source: "gemini" });
-            }
+          const responseText = await callGemini(geminiKey, prompt, 8000);
+          if (responseText) {
+            const parsed = JSON.parse(responseText);
+            return NextResponse.json({ ok: true, ...parsed, source: "gemini" });
           }
         } catch (geminiErr) {
           console.warn("Gemini generate_hooks failed, falling back to local:", geminiErr.message);
