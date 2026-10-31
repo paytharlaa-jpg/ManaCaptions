@@ -702,20 +702,22 @@ The detectedLanguage value must be exactly one of: "telugu", "english", or "mixe
 
   const modelsToTry = [
     "gemini-3.5-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-flash-lite-latest"
+    "gemini-3.5-flash-lite"
   ];
-  const timeoutMs = 45000;
+  // Strict Hostinger LiteSpeed 504 Shield: max 12s budget for Gemini so fallback finishes well under 30s
+  const deadline = Date.now() + 12000;
   let lastError = null;
 
   for (const model of modelsToTry) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs < 3000) break; // Not enough time left, fallback cleanly to Sarvam AI
+
     try {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           method: "POST",
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.timeout(remainingMs),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [
@@ -1119,7 +1121,7 @@ async function ensureDualScriptNative(segments) {
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiKey}`,
         {
           method: "POST",
-          signal: AbortSignal.timeout(15000),
+          signal: AbortSignal.timeout(5000),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [
@@ -1172,7 +1174,7 @@ Return ONLY JSON: {"segments": [{"id": "...", "text": "తెలుగు లి
       if (remainingLines.length > 0) {
         const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
-          signal: AbortSignal.timeout(6000),
+          signal: AbortSignal.timeout(4000),
           headers: {
             Authorization: `Bearer ${groqKey}`,
             "Content-Type": "application/json"
