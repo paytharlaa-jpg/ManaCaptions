@@ -10,9 +10,9 @@ export default function CaptionOverlay({
   scriptMode = "telugu",
   isPlaying = false
 }) {
-  // Use actual video playback time.
-  // No artificial offset or early caption anticipation.
-  const playheadTime = currentTime;
+  // Natural speech lead-in anticipation offset (180ms) to synchronize captions perfectly with speech onset
+  const leadIn = typeof styleConfig?.syncOffset === "number" ? styleConfig.syncOffset : 0.18;
+  const playheadTime = currentTime + leadIn;
 
   // Find the active caption using actual timestamps.
   const activeSegment = useMemo(() => {
@@ -229,7 +229,7 @@ export default function CaptionOverlay({
         style={{
           fontFamily: styleConfig.fontFamily || "NTR",
           fontWeight: styleConfig.fontWeight || 700,
-          fontSize: `calc(${styleConfig.fontSizePct} * 1vh)`,
+          fontSize: `calc(${styleConfig.fontSizePct} * 1cqh)`,
           color: isNegative
             ? "#000000"
             : (styleConfig.color || "#FFFFFF"),
@@ -259,16 +259,6 @@ export default function CaptionOverlay({
           const isWordActive =
             playheadTime >= w.start &&
             playheadTime <= w.end;
-            console.log("KARAOKE DEBUG:", {
-  currentTime: playheadTime,
-  word: w.word,
-  start: w.start,
-  end: w.end,
-  active: isWordActive,
-  karaoke: styleConfig.karaoke,
-  color: styleConfig.color,
-  highlightColor: styleConfig.highlightColor
-});
 
           const isKaraokeActive =
             styleConfig.karaoke && isWordActive;
@@ -324,7 +314,7 @@ export default function CaptionOverlay({
           <div
             className="mt-1.5 px-3 py-1 rounded-lg bg-black/80 text-white font-semibold tracking-wide text-center border border-white/15 shadow-xl"
             style={{
-              fontSize: `calc(${styleConfig.fontSizePct || 4} * 0.58vh)`,
+              fontSize: `calc(${styleConfig.fontSizePct || 4} * 0.58cqh)`,
               fontFamily: "Inter, system-ui, sans-serif"
             }}
           >

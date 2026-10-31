@@ -363,13 +363,18 @@ export async function POST(request) {
         let vfFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
 
 if (subtitlesAss) {
-  // Copy NotoSansTelugu.ttf to tmpDir so libass loads it directly from the current working directory
-  const fontSrc = path.join(process.cwd(), "public", "fonts", "NotoSansTelugu.ttf");
-  if (fsSync.existsSync(fontSrc)) {
-    const fontDst = path.join(tmpDir, "NotoSansTelugu.ttf");
+  // Copy all font files from public/fonts to tmpDir so libass loads them directly from the current working directory
+  const fontsDir = path.join(process.cwd(), "public", "fonts");
+  if (fsSync.existsSync(fontsDir)) {
     try {
-      if (!fsSync.existsSync(fontDst)) {
-        await fs.copyFile(fontSrc, fontDst);
+      const fontFiles = await fs.readdir(fontsDir);
+      for (const file of fontFiles) {
+        if (file.endsWith(".ttf") || file.endsWith(".otf")) {
+          const fontDst = path.join(tmpDir, file);
+          if (!fsSync.existsSync(fontDst)) {
+            await fs.copyFile(path.join(fontsDir, file), fontDst);
+          }
+        }
       }
     } catch (copyErr) {
       console.warn("Font copy notice:", copyErr.message);

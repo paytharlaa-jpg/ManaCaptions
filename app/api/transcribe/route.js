@@ -27,7 +27,9 @@ import ffmpegPath from "ffmpeg-static";
  * Resolves the genuine ffmpeg executable path on Windows/Linux/macOS,
  * bypassing Webpack bundler dirname overrides.
  */
+
 function getFfmpegBinary() {
+  // Prefer the binary supplied by ffmpeg-static.
   if (typeof ffmpegPath === "string" && fsSync.existsSync(ffmpegPath)) {
     return ffmpegPath;
   }
@@ -40,7 +42,12 @@ function getFfmpegBinary() {
     return ffmpegPath.default;
   }
 
-  process.cwd(),
+  // Check the platform-specific package location.
+  const binaryName =
+    process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+
+  const localBinary = path.join(
+    process.cwd(),
     "node_modules",
     "ffmpeg-static",
     binaryName
@@ -50,56 +57,62 @@ function getFfmpegBinary() {
     return localBinary;
   }
 
+  // Do not silently fall back to a missing system executable.
   throw new Error(
     "FFmpeg binary not found. Verify that ffmpeg-static " +
     "is installed as a production dependency and included in deployment."
+  );
 }
+
 
 /**
  * GET /api/transcribe
  * Reports the current active ASR engine and configured provider keys.
  */
-const hasSarvam = Boolean(process.env.SARVAM_API_KEY && process.env.SARVAM_API_KEY.trim());
-const hasGroq = Boolean(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim());
-const hasOpenAI = Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim());
-const hasGemini = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
-const preferred = (process.env.ASR_PROVIDER || "gemini").toLowerCase();
+export async function GET() {
+  const hasSarvam = Boolean(process.env.SARVAM_API_KEY && process.env.SARVAM_API_KEY.trim());
+  const hasGroq = Boolean(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim());
+  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim());
+  const hasGemini = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
+  const preferred = (process.env.ASR_PROVIDER || "gemini").toLowerCase();
 
-let activeEngine = "simulated";
-let engineName = "Offline Telugu Simulation";
+  let activeEngine = "simulated";
+  let engineName = "Offline Telugu Simulation";
 
-if (hasGemini && preferred !== "sarvam" && preferred !== "groq") {
-  activeEngine = "gemini";
-  engineName = "Google Gemini 3.6 Flash Audio Engine";
-} else if (hasSarvam && preferred === "sarvam") {
-  activeEngine = "sarvam";
-  engineName = "Sarvam AI (Saaras Indic ASR)";
-} else if (hasGroq && preferred === "groq") {
-  engineName = "Groq Whisper Large v3 Turbo (Ultra Fast)";
-} else if (hasGemini) {
-  activeEngine = "gemini";
-  engineName = "Google Gemini 3.6 Flash Audio Engine";
-} else if (hasSarvam) {
-  activeEngine = "sarvam";
-  engineName = "Sarvam AI (Saaras Indic ASR)";
-} else if (hasGroq) {
-  activeEngine = "groq";
-} else if (hasOpenAI) {
-  activeEngine = "openai";
-  engineName = "OpenAI Whisper-1";
-}
-
-return NextResponse.json({
-  ok: true,
-  activeEngine,
-  engineName,
-  providers: {
-    gemini: hasGemini,
-    groq: hasGroq,
-    sarvam: hasSarvam,
-    openai: hasOpenAI
+  if (hasGemini && preferred !== "sarvam" && preferred !== "groq") {
+    activeEngine = "gemini";
+    engineName = "Google Gemini 3.5 Flash Audio Engine";
+  } else if (hasSarvam && preferred === "sarvam") {
+    activeEngine = "sarvam";
+    engineName = "Sarvam AI (Saaras Indic ASR)";
+  } else if (hasGroq && preferred === "groq") {
+    activeEngine = "groq";
+    engineName = "Groq Whisper Large v3 Turbo (Ultra Fast)";
+  } else if (hasGemini) {
+    activeEngine = "gemini";
+    engineName = "Google Gemini 3.5 Flash Audio Engine";
+  } else if (hasSarvam) {
+    activeEngine = "sarvam";
+    engineName = "Sarvam AI (Saaras Indic ASR)";
+  } else if (hasGroq) {
+    activeEngine = "groq";
+    engineName = "Groq Whisper Large v3 Turbo (Ultra Fast)";
+  } else if (hasOpenAI) {
+    activeEngine = "openai";
+    engineName = "OpenAI Whisper-1";
   }
-});
+
+  return NextResponse.json({
+    ok: true,
+    activeEngine,
+    engineName,
+    providers: {
+      gemini: hasGemini,
+      groq: hasGroq,
+      sarvam: hasSarvam,
+      openai: hasOpenAI
+    }
+  });
 }
 
 /**
@@ -308,146 +321,166 @@ export async function POST(request) {
 
 /**
  * Fast Audio Extraction via FFmpeg-Static
- * Converts any video format (MP4, MOV, WEBM) of any size
+ * Converts any video format (MP4, MOV, WEBM) of any size (50MB - 200MB+)
  * to a lightweight 16kHz mono 64kbps MP3 buffer (~350KB per minute) in ~100ms.
+ * This guarantees:
+ * - Groq Whisper stays well under its 25MB limit (350KB << 25MB).
+ * - Gemini base64 payload is ~450KB (instant network transfer, zero 413/503 timeouts).
  */
+
 async function extractAudioFromFile(file) {
   const fileBuffer = Buffer.from(await file.arrayBuffer());
   const mimeType = (file.type || "").toLowerCase();
 
+  // Use an existing audio file directly if it is under 15 MB.
   if (
     mimeType.startsWith("audio/") &&
+    fileBuffer.length > 0 &&
+    fileBuffer.length < 15 * 1024 * 1024
+  ) {
     return {
+      audioBuffer: fileBuffer,
       mimeType: file.type || "audio/mpeg",
       filename: file.name || "audio.mp3",
     };
-}
-
-if (fileBuffer.length === 0) {
-  throw new Error("The uploaded file is empty.");
-}
-
-const tmpId = crypto.randomBytes(8).toString("hex");
-const tempDir = os.tmpdir();
-
-const inputExt = mimeType.includes("webm")
-  ? ".webm"
-  : mimeType.includes("quicktime") || mimeType.includes("mov")
-    ? ".mov"
-    : mimeType.includes("ogg")
-      ? ".ogg"
-      : mimeType.includes("wav")
-        ? ".wav"
-        : mimeType.includes("audio/")
-          ? ".audio"
-          : ".mp4";
-
-const inputPath = path.join(tempDir, `tc_in_${tmpId}${inputExt}`);
-const outputPath = path.join(tempDir, `tc_out_${tmpId}.mp3`);
-
-try {
-  await fs.writeFile(inputPath, fileBuffer);
-
-  const ffmpegBinary = getFfmpegBinary();
-
-  if (!ffmpegBinary) {
-    throw new Error(
-      "FFmpeg was not found. Check your getFfmpegBinary() configuration."
-    );
   }
 
-  const result = spawnSync(
-    ffmpegBinary,
-    [
-      "-y",
-      "-i", inputPath,
-      "-vn",
-      "-ac", "1",
-      "-ar", "16000",
-      "-b:a", "64k",
-      "-threads", "1",
-      "-f", "mp3",
-      outputPath,
-    ],
-    {
-      timeout: 25000,
-      encoding: "utf8",
-      windowsHide: true,
-      maxBuffer: 1024 * 1024,
+  if (fileBuffer.length === 0) {
+    throw new Error("The uploaded file is empty.");
+  }
+
+  const tmpId = crypto.randomBytes(8).toString("hex");
+  const tempDir = os.tmpdir();
+
+  const inputExt = mimeType.includes("webm")
+    ? ".webm"
+    : mimeType.includes("quicktime") || mimeType.includes("mov")
+      ? ".mov"
+      : mimeType.includes("ogg")
+        ? ".ogg"
+        : mimeType.includes("wav")
+          ? ".wav"
+          : mimeType.includes("audio/")
+            ? ".audio"
+            : ".mp4";
+
+  const inputPath = path.join(tempDir, `tc_in_${tmpId}${inputExt}`);
+  const outputPath = path.join(tempDir, `tc_out_${tmpId}.mp3`);
+
+  try {
+    await fs.writeFile(inputPath, fileBuffer);
+
+    const ffmpegBinary = getFfmpegBinary();
+
+    if (!ffmpegBinary) {
+      throw new Error(
+        "FFmpeg was not found. Check your getFfmpegBinary() configuration."
+      );
     }
-  );
 
-  if (result.error) {
-    throw new Error(`FFmpeg could not run: ${result.error.message}`);
-  }
-
-  if (result.status !== 0) {
-    throw new Error(
-      `FFmpeg audio extraction failed (exit code ${result.status}). ${details}`
+    const result = spawnSync(
+      ffmpegBinary,
+      [
+        "-y",
+        "-i", inputPath,
+        "-vn",
+        "-ac", "1",
+        "-ar", "16000",
+        "-b:a", "64k",
+        "-threads", "1",
+        "-f", "mp3",
+        outputPath,
+      ],
+      {
+        timeout: 15000,
+        encoding: "utf8",
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      }
     );
+
+    if (result.error) {
+      throw new Error(`FFmpeg could not run: ${result.error.message}`);
+    }
+
+    if (result.status !== 0) {
+      const details = (result.stderr || "").slice(-1000);
+
+      throw new Error(
+        `FFmpeg audio extraction failed (exit code ${result.status}). ${details}`
+      );
+    }
+
+    const audioBuffer = await fs.readFile(outputPath);
+
+    if (audioBuffer.length === 0) {
+      throw new Error("FFmpeg produced an empty audio file.");
+    }
+
+    return {
+      audioBuffer,
+      mimeType: "audio/mpeg",
+      filename: "audio.mp3",
+    };
+  } catch (error) {
+    console.error("Audio extraction failed:", error);
+
+    throw new Error(
+      `Could not extract audio: ${error instanceof Error ? error.message : String(error)
+      }`
+    );
+  } finally {
+    await fs.unlink(inputPath).catch(() => { });
+    await fs.unlink(outputPath).catch(() => { });
   }
-
-  const audioBuffer = await fs.readFile(outputPath);
-
-  if (audioBuffer.length === 0) {
-    throw new Error("FFmpeg produced an empty audio file.");
-  }
-
-  return {
-    audioBuffer,
-    filename: "audio.mp3",
-  };
-} catch (error) {
-  console.error("Audio extraction failed:", error);
-  throw new Error(
-    `Could not extract audio: ${error instanceof Error ? error.message : String(error)}`
-  );
-} finally {
-  await fs.unlink(inputPath).catch(() => { });
-  await fs.unlink(outputPath).catch(() => { });
-}
 }
 
 /**
  * Inner transcription pipeline (Preserved black box with full duration support)
  */
+
 async function runTranscriptionPipeline(file, language, durationSec = 30) {
   const audioData = await extractAudioFromFile(file);
+
   const preferred = (
+    process.env.ASR_PROVIDER || "gemini"
+  ).trim().toLowerCase();
 
   const providers = {
-      gemini: {
-        configured: Boolean(process.env.GEMINI_API_KEY?.trim()),
-        name: "Google Gemini 3.6 Flash",
-        transcribe: () =>
-          transcribeWithGemini(audioData, language, durationSec),
-      },
-      sarvam: {
-        configured: Boolean(process.env.SARVAM_API_KEY?.trim()),
-        name: "Sarvam AI Saaras (Indic Telugu ASR)",
-      },
-      groq: {
-        configured: Boolean(process.env.GROQ_API_KEY?.trim()),
-        name: "Groq Whisper",
-        transcribe: () => transcribeWithGroq(audioData, language),
-      },
-      openai: {
-        configured: Boolean(process.env.OPENAI_API_KEY?.trim()),
-        name: "OpenAI Whisper",
-        transcribe: () => transcribeWithOpenAI(audioData, language),
-      };
+    gemini: {
+      configured: Boolean(process.env.GEMINI_API_KEY?.trim()),
+      name: "Google Gemini 3.5 Flash",
+      transcribe: () =>
+        transcribeWithGemini(audioData, language, durationSec),
+    },
+    sarvam: {
+      configured: Boolean(process.env.SARVAM_API_KEY?.trim()),
+      name: "Sarvam AI Saaras (Indic Telugu ASR)",
+      transcribe: () => transcribeWithSarvam(audioData, language),
+    },
+    groq: {
+      configured: Boolean(process.env.GROQ_API_KEY?.trim()),
+      name: "Groq Whisper",
+      transcribe: () => transcribeWithGroq(audioData, language),
+    },
+    openai: {
+      configured: Boolean(process.env.OPENAI_API_KEY?.trim()),
+      name: "OpenAI Whisper",
+      transcribe: () => transcribeWithOpenAI(audioData, language),
+    },
+  };
 
-      const providerOrder = [
-        ...(providers[preferred] ? [preferred] : []),
-        ...Object.keys(providers).filter(
-          (name) => name !== preferred
-        ),
-      ].filter(
-        (name, index, list) =>
-          providers[name].configured && list.indexOf(name) === index
-      );
+  const providerOrder = [
+    ...(providers[preferred] ? [preferred] : []),
+    ...Object.keys(providers).filter(
+      (name) => name !== preferred
+    ),
+  ].filter(
+    (name, index, list) =>
+      providers[name].configured && list.indexOf(name) === index
+  );
 
-      if(providerOrder.length === 0) {
+  if (providerOrder.length === 0) {
     throw new Error(
       "No transcription API key is configured. " +
       "Add a valid GEMINI_API_KEY, GROQ_API_KEY, " +
@@ -461,6 +494,7 @@ async function runTranscriptionPipeline(file, language, durationSec = 30) {
     try {
       const result = await providers[provider].transcribe();
 
+      // Sarvam returns an array; other providers return an object.
       const rawSegments = Array.isArray(result)
         ? result
         : result?.segments;
@@ -480,6 +514,7 @@ async function runTranscriptionPipeline(file, language, durationSec = 30) {
       return {
         ok: true,
         provider,
+        engineName: providers[provider].name,
         detectedLanguage: Array.isArray(result)
           ? language || "auto"
           : result.detectedLanguage || language || "auto",
@@ -489,18 +524,22 @@ async function runTranscriptionPipeline(file, language, durationSec = 30) {
         segments,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message =
+        error instanceof Error ? error.message : String(error);
+
       console.error(`${provider} transcription failed: ${message}`);
       errors.push(`${provider}: ${message}`);
     }
   }
 
+  // Do not return generated sample captions as real transcription.
   throw new Error(
     "All configured transcription providers failed. " +
     "Check your API keys, provider quotas, audio extraction, " +
     "and server logs. Details: " + errors.join(" | ")
   );
 }
+
 
 /**
  * Transcribe using Groq Whisper Large v3 Turbo
@@ -509,12 +548,17 @@ async function runTranscriptionPipeline(file, language, durationSec = 30) {
 async function transcribeWithGroq(audioData, language = "te") {
   const groqForm = new FormData();
   const audioBlob = new Blob([audioData.audioBuffer], { type: audioData.mimeType || "audio/mp3" });
+  groqForm.append("file", audioBlob, audioData.filename || "audio.mp3");
+  groqForm.append("model", "whisper-large-v3-turbo");
+
   if (language === "te") {
     groqForm.append("language", "te");
     groqForm.append("prompt", "Telugu and Tanglish conversational dialogue, reels captions. Transcribe exact spoken words verbatim.");
   } else if (language === "en") {
     groqForm.append("language", "en");
     groqForm.append("prompt", "Clear song lyrics, vocal audio, and social media video captions.");
+  } else {
+    // In auto mode, let Whisper auto-detect
     groqForm.append("prompt", "Telugu and English video captions, dialogue, reels.");
   }
 
@@ -522,6 +566,7 @@ async function transcribeWithGroq(audioData, language = "te") {
   groqForm.append("timestamp_granularities[]", "word");
   groqForm.append("timestamp_granularities[]", "segment");
   groqForm.append("temperature", "0");
+
   const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST",
     headers: {
@@ -539,10 +584,16 @@ async function transcribeWithGroq(audioData, language = "te") {
   const rawSegments = parseWhisperTranscript(data);
   const segments = await ensureDualScriptNative(rawSegments);
 
-  detectedLanguage: data.language || language || "auto",
+  return {
+    detectedLanguage: data.language || language || "auto",
     segments
-};
+  };
 }
+
+/**
+ * Transcribe using Google Gemini 2.5 Flash Multimodal Audio Engine.
+ * Understands song lyrics, music tracks, background vocals, and code-mixed Telugu/English.
+ */
 
 /**
  * Safely recovers truncated JSON by scanning backwards for the last valid segment
@@ -571,34 +622,23 @@ function safeRecoverJson(rawText) {
 
   try {
     const parsed = JSON.parse(clean.slice(firstBrace, lastBrace + 1));
-    // Attempt closing truncated segment arrays
-    const candidate = clean.slice(firstBrace, lastBrace + 1);
-    const closers = ["]}", "\"]}", "}]}", "\"}]}", "\"}]}}", "]}"];
-    for (const closer of closers) {
-      try {
-        const testObj = JSON.parse(candidate + closer);
-        if (testObj && testObj.segments && Array.isArray(testObj.segments)) {
-          return testObj;
-        }
-      } catch { }
+    if (parsed && Array.isArray(parsed.segments)) {
+      return parsed;
     }
+  } catch { }
 
-    return null;
-  }
+  return null;
+}
 
-/**
- * Transcribe using Google Gemini Multimodal Audio Engine.
- * Understands song lyrics, music tracks, background vocals, and code-mixed Telugu/English.
- */
 async function transcribeWithGemini(audioData, language = "auto", durationSec = 30) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
 
-    const base64Data = audioData.audioBuffer.toString("base64");
-    const mimeType = audioData.mimeType || "audio/mp3";
-    const roundedDuration = Math.max(5, Math.round(durationSec));
+  const base64Data = audioData.audioBuffer.toString("base64");
+  const mimeType = audioData.mimeType || "audio/mp3";
+  const roundedDuration = Math.max(5, Math.round(durationSec));
 
-    const systemPrompt = `You are a world-class professional subtitle and captioning engine for movies, reels, and video dialogue.
+  const systemPrompt = `You are a world-class professional subtitle and captioning engine for movies, reels, and video dialogue.
 Listen carefully to the audio and transcribe into timed subtitle segments (each 1.5 to 3.5 seconds long).
 
 CRITICAL DURATION & COMPLETION REQUIREMENT:
@@ -610,8 +650,8 @@ CRITICAL FILM-GRADE SUBTITLE RULES:
 1. PRISTINE TELUGU SCRIPT (తెలుగు లిపి) & ZERO TYPOGRAPHICAL ERRORS:
    - Must be written in authentic, flawless Telugu script (తెలుగు లిపి).
    - Strict orthography: perfect guninthalu (గుణింతాలు), otthulu (ఒత్తులు), deerghalu (దీర్ఘాలు), and sunna (సున్న). Zero spelling mistakes.
-   - For popular conversational creator words (e.g. video, reels, friends, follow, share, subscribe, like, comment, channel, tips, tricks, update, viral, crazy, easy), write the universally accepted standard Telugu spellings:
-     "వీడియో", "రీల్స్", "ఫ్రెండ్స్", "ఫాలో", "షేర్", "సబ్‌స్క్రైబ్", "లైక్", "కామెంట్", "ఛానల్", "టిప్స్", "ట్రిక్స్", "అప్‌డేట్", "వైరల్", "క్రేజీ", "ఈజీ".
+   - For popular conversational creator words (e.g. video, reels, friends, follow, share, subscribe, like, channel, tips), write the universally accepted standard Telugu spellings:
+     "వీడియో", "రీల్స్", "ఫ్రెండ్స్", "ఫాలో", "షేర్", "సబ్‌స్క్రైబ్", "లైక్", "ఛానల్", "టిప్స్".
    - CRITICAL: DO NOT translate common conversational creator words into archaic dictionary terms (e.g. do NOT change "వీడియో" to "దృశ్యచిత్రం", do NOT change "ఫ్రెండ్స్" to "స్నేహితులు", do NOT change "సబ్‌స్క్రైబ్" to "సభ్యత్వాన్ని పొందండి"). Keep the authentic, conversational creator tone!
 
 2. "text" (AUTHENTIC TELUGU SCRIPT - ALWAYS TELUGU SCRIPT):
@@ -633,7 +673,10 @@ CRITICAL FILM-GRADE SUBTITLE RULES:
    - All timestamps must be in seconds, measured from the beginning of the audio.
    - Return accurate individual timestamps for every word.
 
-Return ONLY a valid JSON object matching this schema:
+Return ONLY a valid JSON object. Do not include Markdown code fences, comments, or explanations.
+
+The detectedLanguage value must be exactly one of: "telugu", "english", or "mixed".
+
 {
   "detectedLanguage": "telugu",
   "songTitle": "",
@@ -641,6 +684,8 @@ Return ONLY a valid JSON object matching this schema:
     {
       "id": "seg-1",
       "start": 0.0,
+      "end": 2.5,
+      "text": "తెలుగు లిపిలో సినిమా శైలి క్యాప్షన్",
       "romanizedText": "Exact spoken words",
       "words": [
         {
@@ -652,17 +697,20 @@ Return ONLY a valid JSON object matching this schema:
       ]
     }
   ]
+}
 }`;
 
-    const modelsToTry = [
-      "gemini-3.6-flash",
-      "gemini-3.5-flash",
-      "gemini-flash-lite-latest"
-    ];
+  const modelsToTry = [
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite"
+  ];
+  // Strict Hostinger LiteSpeed 504 Shield: max 12s budget for Gemini so fallback finishes well under 30s
+  const deadline = Date.now() + 12000;
+  let lastError = null;
 
-    // LiteSpeed shield: 15s budget for Gemini so fallback finishes well under 30s
-    const deadline = Date.now() + 15000;
-    let lastError = null;
+  for (const model of modelsToTry) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs < 3000) break; // Not enough time left, fallback cleanly to Sarvam AI
 
     try {
       const response = await fetch(
@@ -685,104 +733,145 @@ Return ONLY a valid JSON object matching this schema:
                 ]
               }
             ],
-            responseMimeType: "application/json",
-            maxOutputTokens: 8192,
-            temperature: 0.1
-          }
+            generationConfig: {
+              responseMimeType: "application/json",
+              maxOutputTokens: 8192,
+              temperature: 0.1
+            }
           })
-    }
+        }
       );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini ${model} returned ${response.status}: ${errorText}`);
-    }
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gemini ${model} returned ${response.status}: ${errorText}`);
+      }
 
-    const data = await response.json();
-    const candidate = data?.candidates?.[0];
+      const data = await response.json();
+      const candidate = data?.candidates?.[0];
 
-    if (!candidate) {
-      const blockReason = data?.promptFeedback?.blockReason;
-      throw new Error(
-        blockReason
-          ? `Gemini blocked the request: ${blockReason}`
-          : "Gemini returned no candidate response."
-      );
-    }
+      if (!candidate) {
+        const blockReason = data?.promptFeedback?.blockReason;
 
-    console.log("Gemini finish reason:", candidate.finishReason);
+        throw new Error(
+          blockReason
+            ? `Gemini blocked the request: ${blockReason}`
+            : "Gemini returned no candidate response."
+        );
+      }
+      console.log("Gemini finish reason:", candidate.finishReason);
+console.log("Gemini usage:", data.usageMetadata);
 
-    const rawText = (candidate.content?.parts || [])
-      .join("")
-      .trim();
+      const rawText = (candidate.content?.parts || [])
+        .map(part => part.text || "")
+        .join("")
+        .trim();
 
-    if (!rawText) {
-      throw new Error("Gemini returned an empty transcription response.");
-    }
+      if (!rawText) {
+        throw new Error("Gemini returned an empty transcription response.");
+      }
 
-    let parsed;
-    try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      parsed = safeRecoverJson(rawText);
-    }
+      let parsed;
 
-    if (!parsed || !Array.isArray(parsed.segments)) {
-      throw new Error(
-        `Gemini returned invalid JSON. Finish reason: ${candidate.finishReason || "unknown"}. Response preview: ${rawText.slice(0, 300)}`
-      );
-    }
+      try {
+        parsed = JSON.parse(rawText);
+      } catch {
+        parsed = safeRecoverJson(rawText);
+      }
 
-    if (parsed.segments.length === 0) {
-      throw new Error("Gemini returned no transcript segments.");
-    }
+      if (!parsed || !Array.isArray(parsed.segments)) {
+        throw new Error(
+          `Gemini returned invalid JSON. Finish reason: ${candidate.finishReason || "unknown"
+          }. Response preview: ${rawText.slice(0, 300)}`
+        );
+      }
 
-    let segs = parsed.segments.map((s, idx) => ({
-      id: s.id || `seg-${idx + 1}`,
-      start: Number(s.start || 0),
-      end: Number(s.end || (s.start + 2.5)),
-      romanizedText: s.romanizedText || s.text || "",
-      words: Array.isArray(s.words) && s.words.length > 0 ? s.words.map(w => ({
-        word: w.word || "",
-        romanized: w.romanized || w.word || "",
-        start: Number(w.start ?? s.start),
-        end: Number(w.end ?? s.end)
-      })) : (s.text || "").split(" ").map((w, wIdx, arr) => {
-        const dur = Math.max(0.2, (s.end - s.start) / Math.max(1, arr.length));
-        word: w,
-          romanized: w,
-            start: Number((s.start + wIdx * dur).toFixed(2)),
+      if (parsed.segments.length === 0) {
+        throw new Error("Gemini returned no transcript segments.");
+      }
+      if (parsed.segments && Array.isArray(parsed.segments) && parsed.segments.length > 0) {
+        let segs = parsed.segments.map((s, idx) => ({
+          id: s.id || `seg-${idx + 1}`,
+          start: Number(s.start || 0),
+          end: Number(s.end || (s.start + 2.5)),
+          text: s.text || "",
+          romanizedText: s.romanizedText || s.text || "",
+          words: Array.isArray(s.words) && s.words.length > 0 ? s.words.map(w => ({
+            word: w.word || "",
+            romanized: w.romanized || w.word || "",
+            start: Number(w.start ?? s.start),
+            end: Number(w.end ?? s.end)
+          })) : (s.text || "").split(" ").map((w, wIdx, arr) => {
+            const dur = Math.max(0.2, (s.end - s.start) / Math.max(1, arr.length));
+            return {
+              word: w,
+              romanized: w,
+              start: Number((s.start + wIdx * dur).toFixed(2)),
               end: Number((s.start + (wIdx + 1) * dur).toFixed(2))
-      };
-    })
-      }));
+            };
+          })
+        }));
 
-  // Truncation check: Only flag if ended extremely prematurely (<40% of duration) and few segments
-  const lastEnd = segs[segs.length - 1]?.end || 0;
-  if (durationSec >= 30 && lastEnd < durationSec * 0.40 && segs.length < Math.max(5, durationSec / 10)) {
-    truncErr.isEarlyTruncation = true;
-    throw truncErr;
+        // Truncation check: Only flag if ended extremely prematurely (<40% of duration) and few segments
+        const lastEnd = segs[segs.length - 1]?.end || 0;
+        if (durationSec >= 30 && lastEnd < durationSec * 0.40 && segs.length < Math.max(5, durationSec / 10)) {
+          const truncErr = new Error(`Gemini cut off early at ${lastEnd.toFixed(1)}s for a ${durationSec}s video`);
+          truncErr.isEarlyTruncation = true;
+          throw truncErr;
+        }
+
+        segs = await ensureDualScriptNative(segs);
+
+        return {
+          detectedLanguage: parsed.detectedLanguage || "unknown",
+          songTitle: parsed.songTitle,
+          segments: segs
+        };
+      }
+    } catch (err) {
+      console.warn(`Gemini model ${model} attempt failed:`, err.message);
+      lastError = err;
+      if (err.isEarlyTruncation) {
+        // Immediate fallback to Groq Whisper without looping through more Gemini models
+        break;
+      }
+    }
   }
 
-  segs = await ensureDualScriptNative(segs);
+  throw lastError || new Error("Gemini transcription failed");
+}
 
+/**
+ * Transcribe using Sarvam AI Saaras Indic ASR
+ * Specialized in Indian accents and native Telugu nuances.
+ */
+async function transcribeWithSarvam(audioData, language = "auto") {
+  const sarvamForm = new FormData();
+  const audioBlob = new Blob([audioData.audioBuffer], { type: audioData.mimeType || "audio/mp3" });
+  sarvamForm.append("file", audioBlob, audioData.filename || "audio.mp3");
+  sarvamForm.append("model", "saaras:v4");
+  sarvamForm.append("language_code", language === "auto" ? "te-IN" : `${language}-IN`);
+  sarvamForm.append("with_timestamps", "true");
+
+  const response = await fetch("https://api.sarvam.ai/speech-to-text", {
+    method: "POST",
+    headers: {
+      "api-subscription-key": process.env.SARVAM_API_KEY
+    },
+    body: sarvamForm
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Sarvam API returned ${response.status}: ${errorText}`);
+  }
+
+  const data = await response.json();
+  const segments = parseSarvamTranscript(data);
   return {
-    detectedLanguage: parsed.detectedLanguage || "unknown",
+    detectedLanguage: data.language_code?.startsWith("te") ? "telugu" : "mixed",
+    segments
   };
-} catch (err) {
-  console.warn(`Gemini model ${model} attempt failed:`, err.message);
-  lastError = err;
-  if (err.isEarlyTruncation) {
-    break;
-  }
-},
-
-const data = await response.json();
-const segments = parseSarvamTranscript(data);
-return {
-  detectedLanguage: data.language_code?.startsWith("te") ? "telugu" : "mixed",
-  segments
-};
 }
 
 /**
@@ -798,6 +887,7 @@ async function transcribeWithOpenAI(audioData, language = "auto") {
   }
   openaiForm.append("response_format", "verbose_json");
   openaiForm.append("timestamp_granularities[]", "word");
+  openaiForm.append("temperature", "0");
 
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
@@ -806,6 +896,12 @@ async function transcribeWithOpenAI(audioData, language = "auto") {
     },
     body: openaiForm
   });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI API returned ${response.status}: ${errorText}`);
+  }
+
   const data = await response.json();
   const segments = parseWhisperTranscript(data);
   return {
@@ -816,62 +912,51 @@ async function transcribeWithOpenAI(audioData, language = "auto") {
 
 /**
  * Parse and chunk Sarvam AI response into digestible 2-3.5s subtitle cards
- * Accurately decomposes phrase-level timestamps into individual words.
+ */
 function parseSarvamTranscript(data) {
-  const fullTranscript = (data.transcript || "").trim();
+  const fullTranscript = data.transcript || "";
   const timestamps = data.timestamps;
 
+  // Sarvam returns parallel arrays: timestamps.words (strings), timestamps.start_time_seconds, timestamps.end_time_seconds
+  // Or in some SDK versions: data.words (objects)
   const rawWords = Array.isArray(timestamps?.words)
     ? timestamps.words
     : (Array.isArray(data.words) ? data.words : []);
   const startTimes = Array.isArray(timestamps?.start_time_seconds) ? timestamps.start_time_seconds : [];
   const endTimes = Array.isArray(timestamps?.end_time_seconds) ? timestamps.end_time_seconds : [];
 
-  const wordItems = [];
-
-  if (rawWords.length > 0) {
-    rawWords.forEach((w, index) => {
-      let rawText = "";
-      let pStart = 0;
-      let pEnd = 0;
-
-      if (typeof w === "string") {
-        rawText = w.trim();
-        pStart = Number((startTimes[index] ?? (index * 1.5)).toFixed(2));
-        pEnd = Number((endTimes[index] ?? (pStart + 1.5)).toFixed(2));
-      } else if (w && typeof w === "object") {
-        rawText = (w.word || "").trim();
-        pStart = Number((w.start_time_seconds ?? w.start ?? (index * 1.5)).toFixed(2));
-        pEnd = Number((w.end_time_seconds ?? w.end ?? (pStart + 1.5)).toFixed(2));
-      }
-
-      if (!rawText) return;
-
-      const splitWords = rawText.split(/\s+/).filter(Boolean);
-      if (splitWords.length <= 1) {
-        wordItems.push({
-          word: rawText,
-          romanized: teluguToRomanized(rawText),
-          start: pStart,
-          end: pEnd
-        });
-      } else {
-        const totalDur = Math.max(0.1, pEnd - pStart);
-        const wDur = totalDur / splitWords.length;
-        splitWords.forEach((sw, sIdx) => {
-          wordItems.push({
-            word: sw,
-            romanized: teluguToRomanized(sw),
-            start: Number((pStart + sIdx * wDur).toFixed(2)),
-            end: Number((pStart + (sIdx + 1) * wDur).toFixed(2))
-          });
-        });
-      }
-    });
+  if (!rawWords || rawWords.length === 0) {
+    if (fullTranscript.trim()) {
+      return chunkRawTextIntoSegments(fullTranscript);
+    }
+    return [];
   }
 
+  const wordItems = rawWords.map((w, index) => {
+    let rawWord = "";
+    let start = 0;
+    let end = 0;
+
+    if (typeof w === "string") {
+      rawWord = w.trim();
+      start = Number((startTimes[index] ?? (index * 0.4)).toFixed(2));
+      end = Number((endTimes[index] ?? (start + 0.35)).toFixed(2));
+    } else if (w && typeof w === "object") {
+      rawWord = (w.word || "").trim();
+      start = Number((w.start_time_seconds ?? w.start ?? (index * 0.4)).toFixed(2));
+      end = Number((w.end_time_seconds ?? w.end ?? (start + 0.35)).toFixed(2));
+    }
+
+    return {
+      word: rawWord,
+      romanized: teluguToRomanized(rawWord),
+      start,
+      end
+    };
+  }).filter(item => Boolean(item.word));
+
   if (wordItems.length === 0) {
-    if (fullTranscript) {
+    if (fullTranscript.trim()) {
       return chunkRawTextIntoSegments(fullTranscript);
     }
     return [];
@@ -887,7 +972,7 @@ function parseSarvamTranscript(data) {
 
     const currentDuration = cw.end - chunkStartTime;
     const isPunctuationBreak = /[.!?|।]/.test(cw.word);
-    const isNaturalChunkSize = currentWords.length >= 5 || currentDuration >= 3.0;
+    const isNaturalChunkSize = currentWords.length >= 6 || currentDuration >= 3.2;
 
     if (isPunctuationBreak || isNaturalChunkSize || index === wordItems.length - 1) {
       const segText = currentWords.map(w => w.word).join(" ");
@@ -899,23 +984,47 @@ function parseSarvamTranscript(data) {
         end: cw.end,
         text: segText,
         romanizedText: segRo,
+        words: [...currentWords]
       });
 
       currentWords = [];
+      chunkStartTime = null;
+    }
   });
 
   return segments;
 }
 
 /**
+ * Parse Whisper verbose_json response and ensure optimal short-form reel sizing
+ */
+function parseWhisperTranscript(data) {
+  const rawSegments = data.segments || [];
+  if (rawSegments.length === 0) {
+    if (data.text?.trim()) {
       return chunkRawTextIntoSegments(data.text);
     }
+    return [];
+  }
+
+  const finalSegments = [];
 
   rawSegments.forEach((seg) => {
     const text = (seg.text || "").trim();
     if (!text) return;
 
+    // Filter out phantom noise artifacts (e.g. single period or isolated whisper hallucination)
     if (text === "." || text === "..." || text === " Beep." || text === "Beep.") return;
+
+    const start = Number(seg.start.toFixed(2));
+    const end = Number(seg.end.toFixed(2));
+    const duration = Math.max(0.1, end - start);
+
+    // Extract word-level timestamps if available
+    let words = (seg.words || []).map(w => {
+      const rawWord = (w.word || "").trim();
+      const isTe = /[\u0C00-\u0C7F]/.test(rawWord);
+      return {
         word: rawWord,
         romanized: isTe ? teluguToRomanized(rawWord) : rawWord,
         start: Number((w.start ?? start).toFixed(2)),
@@ -923,9 +1032,17 @@ function parseSarvamTranscript(data) {
       };
     }).filter(w => w.word);
 
+    // If word timings were not provided, interpolate evenly
     if (words.length === 0) {
       const splitWords = text.split(/\s+/).filter(Boolean);
       const wordDur = duration / Math.max(1, splitWords.length);
+      words = splitWords.map((w, wIdx) => {
+        const isTe = /[\u0C00-\u0C7F]/.test(w);
+        return {
+          word: w,
+          romanized: isTe ? teluguToRomanized(w) : w,
+          start: Number((start + wIdx * wordDur).toFixed(2)),
+          end: Number((start + (wIdx + 1) * wordDur).toFixed(2))
         };
       });
     }
@@ -933,6 +1050,7 @@ function parseSarvamTranscript(data) {
     const isTelugu = /[\u0C00-\u0C7F]/.test(text);
     const romanizedText = isTelugu ? teluguToRomanized(text) : text;
 
+    // Split overly long segments (> 8 words or > 4.2 seconds) into viral subtitle cards
     if (words.length > 8 || duration > 4.2) {
       const chunksCount = Math.ceil(words.length / 5);
       const chunkSize = Math.ceil(words.length / chunksCount);
@@ -952,6 +1070,7 @@ function parseSarvamTranscript(data) {
           end: subEnd,
           text: subText,
           romanizedText: subRo,
+          words: slice
         });
       }
     } else {
@@ -968,9 +1087,10 @@ function parseSarvamTranscript(data) {
 
   return finalSegments;
 }
+
 /**
  * Guarantees that in Auto mode:
- * 1. `text`: Native Telugu language style (తెలుగు లిపి) with strict creator orthography
+ * 1. `text`: Native Telugu language style (తెలుగు లిపి)
  * 2. `romanizedText`: Exact verbatim captions as spoken without changing any single word
  * 3. Individual words mapped with acoustic timestamps
  */
@@ -998,10 +1118,10 @@ async function ensureDualScriptNative(segments) {
       }));
 
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiKey}`,
         {
           method: "POST",
-          signal: AbortSignal.timeout(6000),
+          signal: AbortSignal.timeout(5000),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [
@@ -1009,16 +1129,18 @@ async function ensureDualScriptNative(segments) {
                 parts: [
                   {
                     text: `You are a world-class Telugu film subtitle and captioning engine.
+Convert the provided subtitle lines into authentic, film-grade native Telugu script (తెలుగు లిపి) with strict, pristine Telugu spelling and grammar (సరైన గుణింతాలు, ఒత్తులు, దీర్ఘాలు).
 Zero typographical errors.
-Keep standard creator terms in standard Telugu spelling: "వీడియో", "రీల్స్", "ఫ్రెండ్స్", "షేర్", "ఫాలో", "లైక్", "సబ్‌స్క్రైబ్", "ఛానల్", "టిప్స్", "కామెంట్". Do NOT translate them into archaic dictionary terms.
+Keep standard creator terms in standard Telugu spelling: "వీడియో", "రీల్స్", "ఫ్రెండ్స్", "షేర్", "ఫాలో", "లైక్", "సబ్‌స్క్రైబ్", "ఛానల్", "టిప్స్". Do NOT translate them into archaic dictionary terms.
 Return ONLY JSON: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}.\nLines to transcribe:\n${JSON.stringify(inputLines)}`
                   }
                 ]
               }
+            ],
             generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.1
-              }
+              responseMimeType: "application/json",
+              temperature: 0.1
+            }
           })
         }
       );
@@ -1026,148 +1148,159 @@ Return ONLY JSON: {"segments": [{"id": "...", "text": "తెలుగు లి
       if (res.ok) {
         const d = await res.json();
         const raw = d?.candidates?.[0]?.content?.parts?.[0]?.text;
-        const parsed = JSON.parse(raw);
-        if (parsed.segments && Array.isArray(parsed.segments)) {
-          parsed.segments.forEach(item => {
-            if (item.id && item.text) {
-              conversionMap.set(item.id, item.text);
-            }
-          });
-        }
-      }
-    }
-    } catch (gErr) {
-    console.warn("Gemini native Telugu conversion fallback error:", gErr.message);
-  }
-}
-
-// Fallback to Groq if Gemini wasn't used or some lines missing
-if (groqKey && conversionMap.size < nonTeluguSegments.length) {
-  const remainingLines = nonTeluguSegments.filter(s => !conversionMap.has(s.id)).map(s => ({
-    id: s.id,
-    text: s.romanizedText || s.text
-  }));
-  if (remainingLines.length > 0) {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      signal: AbortSignal.timeout(5000),
-      headers: {
-        Authorization: `Bearer ${groqKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-20b",
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: 'You are a verbatim Telugu reel subtitle transcriber. Transcribe the provided lines into Telugu script (తెలుగు లిపి) preserving the EXACT words spoken with zero spelling errors. DO NOT translate English/Tanglish creator words to archaic dictionary meanings (e.g. write "ఫ్రెండ్స్" not "స్నేహితులు", write "వీడియో" not "దృశ్యచిత్రం", write "రీల్స్", "లైక్", "షేర్", "సబ్‌స్క్రైబ్", "ఛానల్", "టిప్స్", "కామెంట్"). Return JSON: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}'
-          },
-          {
-            role: "user",
-            content: JSON.stringify(remainingLines)
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.segments && Array.isArray(parsed.segments)) {
+            parsed.segments.forEach(item => {
+              if (item.id && item.text) {
+                conversionMap.set(item.id, item.text);
+              }
+            });
           }
-        ]
-      })
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      const content = data?.choices?.[0]?.message?.content;
-      if (content) {
-        const parsed = JSON.parse(content);
-        if (parsed.segments && Array.isArray(parsed.segments)) {
-          parsed.segments.forEach(item => {
-            if (item.id && item.text) {
-              conversionMap.set(item.id, item.text);
-            }
-          });
         }
       }
-    }
-  } catch (err) {
-    console.warn("Groq native Telugu conversion failed:", err.message);
-  }
-}
-
-return segments.map(seg => {
-  const exactEnglish = seg.romanizedText || seg.text;
-
-  let teText = conversionMap.get(seg.id);
-  if (!teText) {
-    if (/[\u0C00-\u0C7F]/.test(seg.text)) {
-      teText = seg.text;
-    } else {
-      teText = romanizedToTelugu(exactEnglish);
+    } catch (gErr) {
+      console.warn("Gemini native Telugu conversion fallback error:", gErr.message);
     }
   }
 
-  const teWords = teText.trim().split(/\s+/).filter(Boolean);
-  const duration = Math.max(0.1, (seg.end || 2.5) - (seg.start || 0));
-  const wordDur = duration / Math.max(1, teWords.length);
+  // Fallback to Groq if Gemini wasn't used or some lines missing
+  if (groqKey && conversionMap.size < nonTeluguSegments.length) {
+    try {
+      const remainingLines = nonTeluguSegments.filter(s => !conversionMap.has(s.id)).map(s => ({
+        id: s.id,
+        text: s.romanizedText || s.text
+      }));
+      if (remainingLines.length > 0) {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          signal: AbortSignal.timeout(4000),
+          headers: {
+            Authorization: `Bearer ${groqKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "openai/gpt-oss-20b",
+            response_format: { type: "json_object" },
+            messages: [
+              {
+                role: "system",
+                content: 'You are a verbatim Telugu reel subtitle transcriber. Transcribe the provided lines into Telugu script (తెలుగు లిపి) preserving the EXACT words spoken. DO NOT translate English/Tanglish words to pure Telugu dictionary meanings (e.g. write "ఫ్రెండ్స్" not "స్నేహితులు", write "వీడియో" not "దృశ్యచిత్రం"). Return JSON: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}'
+              },
+              {
+                role: "user",
+                content: JSON.stringify(remainingLines)
+              }
+            ]
+          })
+        });
 
-  const updatedWords = (seg.words && seg.words.length > 0)
-    ? seg.words.map((w, idx) => ({
-      ...w,
-      word: teWords[idx] || w.word,
-    }))
-    : teWords.map((w, idx) => ({
-      word: w,
-      start: Number(((seg.start || 0) + idx * wordDur).toFixed(2)),
-      end: Number(((seg.start || 0) + (idx + 1) * wordDur).toFixed(2))
-    }));
+        if (res.ok) {
+          const data = await res.json();
+          const content = data?.choices?.[0]?.message?.content;
+          if (content) {
+            const parsed = JSON.parse(content);
+            if (parsed.segments && Array.isArray(parsed.segments)) {
+              parsed.segments.forEach(item => {
+                if (item.id && item.text) {
+                  conversionMap.set(item.id, item.text);
+                }
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Groq native Telugu conversion failed:", err.message);
+    }
+  }
 
-  return {
-    ...seg,
-    text: teText,
-    romanizedText: exactEnglish,
-    words: updatedWords
-  };
+  return segments.map(seg => {
+    // English caption: exact words as spoken by the speaker without changing any single word
+    const exactEnglish = seg.romanizedText || seg.text;
+
+    // Telugu caption: native Telugu language style
+    let teText = conversionMap.get(seg.id);
+    if (!teText) {
+      if (/[\u0C00-\u0C7F]/.test(seg.text)) {
+        teText = seg.text;
+      } else {
+        teText = romanizedToTelugu(exactEnglish);
+      }
+    }
+
+    const teWords = teText.trim().split(/\s+/).filter(Boolean);
+    const duration = Math.max(0.1, (seg.end || 2.5) - (seg.start || 0));
+    const wordDur = duration / Math.max(1, teWords.length);
+
+    const updatedWords = (seg.words && seg.words.length > 0)
+      ? seg.words.map((w, idx) => ({
+        ...w,
+        word: teWords[idx] || w.word,
+        romanized: w.romanized || exactEnglish.split(/\s+/)[idx] || w.word
+      }))
+      : teWords.map((w, idx) => ({
+        word: w,
+        romanized: exactEnglish.split(/\s+/)[idx] || w,
+        start: Number(((seg.start || 0) + idx * wordDur).toFixed(2)),
+        end: Number(((seg.start || 0) + (idx + 1) * wordDur).toFixed(2))
+      }));
+
+    return {
+      ...seg,
+      text: teText,
+      romanizedText: exactEnglish,
+      words: updatedWords
+    };
+  });
 }
 
 /**
  * Fallback chunker when only raw text without timestamps is available
  */
 function chunkRawTextIntoSegments(rawText) {
-    const clean = rawText.trim();
-    const sentences = clean.split(/[.!?|।\n]+/).map(s => s.trim()).filter(Boolean);
-    let currentTime = 0.3;
+  const clean = rawText.trim();
+  const sentences = clean.split(/[.!?|।\n]+/).map(s => s.trim()).filter(Boolean);
+  let currentTime = 0.3;
 
-    return sentences.map((sentence, idx) => {
-      const isTe = /[\u0C00-\u0C7F]/.test(sentence);
-      const words = sentence.split(/\s+/).filter(Boolean);
-      const duration = Math.min(4.5, Math.max(1.8, words.length * 0.45));
-      const start = Number(currentTime.toFixed(2));
-      const end = Number((currentTime + duration).toFixed(2));
-      currentTime = end + 0.3;
+  return sentences.map((sentence, idx) => {
+    const isTe = /[\u0C00-\u0C7F]/.test(sentence);
+    const words = sentence.split(/\s+/).filter(Boolean);
+    const duration = Math.min(4.5, Math.max(1.8, words.length * 0.45));
+    const start = Number(currentTime.toFixed(2));
+    const end = Number((currentTime + duration).toFixed(2));
+    currentTime = end + 0.3;
 
-      const wordDur = duration / Math.max(1, words.length);
-      const wordObjects = words.map((w, wIdx) => {
-        const wordIsTe = /[\u0C00-\u0C7F]/.test(w);
-        return {
-          word: w,
-          romanized: wordIsTe ? teluguToRomanized(w) : w,
-          start: Number((start + wIdx * wordDur).toFixed(2)),
-          end: Number((start + (wIdx + 1) * wordDur).toFixed(2))
-        };
-      });
-
+    const wordDur = duration / Math.max(1, words.length);
+    const wordObjects = words.map((w, wIdx) => {
+      const wordIsTe = /[\u0C00-\u0C7F]/.test(w);
       return {
-        id: `seg-${idx + 1}`,
-        start,
-        end,
-        text: sentence,
-        romanizedText: isTe ? teluguToRomanized(sentence) : sentence,
-        words: wordObjects
+        word: w,
+        romanized: wordIsTe ? teluguToRomanized(w) : w,
+        start: Number((start + wIdx * wordDur).toFixed(2)),
+        end: Number((start + (wIdx + 1) * wordDur).toFixed(2))
       };
     });
-  }
+
+    return {
+      id: `seg-${idx + 1}`,
+      start,
+      end,
+      text: sentence,
+      romanizedText: isTe ? teluguToRomanized(sentence) : sentence,
+      words: wordObjects
+    };
+  });
+}
 
 /**
  * Realistic Offline Telugu Simulation Fallback Engine
  * Generates continuous, realistic creator dialogue dynamically matching durationSec.
+ * Never cuts off at 14.7s!
+ */
 function generateTeluguSimulation(durationSec = 30) {
   const phraseBank = [
+    {
       te: "హలో ఫ్రెండ్స్ ఈరోజు ఒక క్రేజీ అప్‌డేట్ చూద్దాం",
       ro: "Hello friends ee roju oka crazy update chuddam",
       duration: 3.2
@@ -1177,6 +1310,7 @@ function generateTeluguSimulation(durationSec = 30) {
       ro: "Telugu lo captions cheyadam intha easy ani evaru cheppaledhu",
       duration: 3.5
     },
+    {
       te: "కేవలం సింగిల్ క్లిక్‌తో వైరల్ కారావోకే స్టైల్స్",
       ro: "Kevalam single click tho viral karaoke styles",
       duration: 2.8
@@ -1208,8 +1342,10 @@ function generateTeluguSimulation(durationSec = 30) {
     },
     {
       te: "మన క్యాప్షన్స్‌తో మీ వీడియోస్ నెక్స్ట్ లెవల్‌కి తీసుకెళ్లండి",
+      ro: "ManaCaptions tho mee videos next level ki theesukellandi",
       duration: 3.6
     },
+    {
       te: "లైక్ చేయండి షేర్ చేయండి మరిన్ని వీడియోల కోసం ఫాలో అవ్వండి",
       ro: "Like cheyandi share cheyandi marinni videola kosam follow avvandi",
       duration: 3.8

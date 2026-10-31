@@ -604,7 +604,10 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
 
   // Canvas Subtitle Drawer helper for fallback
   const renderCaptionFrame = (curTime, canvas, ctx) => {
-    let active = segments.find(s => curTime >= s.start && curTime <= s.end);
+    const leadIn = typeof styleConfig?.syncOffset === "number" ? styleConfig.syncOffset : 0.18;
+    const curTimeWithLead = curTime + leadIn;
+
+    let active = segments.find(s => curTimeWithLead >= s.start && curTimeWithLead <= s.end);
     if (!active) {
       active = segments.find(s => curTime >= (s.start - 0.05) && curTime <= (s.end + 0.25));
     }
@@ -643,8 +646,7 @@ console.log("GENERATED ASS SUBTITLES:", assSubtitles.slice(0, 2000));
     });
 
     const userPct = Number(styleConfig.fontSizePct) || 2.2;
-    const fontRatio = userPct / 2.2;
-    const fontSize = Math.max(28, Math.round(canvas.height * 0.042 * fontRatio));
+    const fontSize = Math.max(22, Math.round(canvas.height * (userPct / 100)));
     const fontWeight = styleConfig.fontWeight || 700;
     const fontFamily = styleConfig.fontFamily || "NTR";
     const lineHeight = (styleConfig.lineHeight || 1.15) * fontSize;

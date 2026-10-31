@@ -378,8 +378,9 @@ export default function VideoStage({
       {/* Center Viewport Stage */}
       <div className="flex-1 w-full min-h-0 flex items-center justify-center p-2 overflow-hidden my-1 relative">
         <div
-          className="relative bg-black rounded-2xl overflow-hidden shadow-2xl border border-[#20309A]/40 ring-1 ring-[#20309A]/30 flex items-center justify-center cursor-pointer group select-none transition-all duration-150"
+          className="relative bg-black rounded-2xl overflow-hidden shadow-2xl border border-[#20309A]/40 ring-1 ring-[#20309A]/30 flex items-center justify-center cursor-pointer group select-none transition-all duration-150 [container-type:size]"
           style={{
+            containerType: "size",
             aspectRatio: aspectRatio,
             maxHeight: "100%",
             maxWidth: "100%",
