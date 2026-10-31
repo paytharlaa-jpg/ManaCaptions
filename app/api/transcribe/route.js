@@ -81,7 +81,7 @@ export async function GET() {
 
   if (hasGemini && preferred !== "sarvam" && preferred !== "groq") {
     activeEngine = "gemini";
-    engineName = "Google Gemini Flash Audio Engine";
+    engineName = "Google Gemini 3.5 Flash Audio Engine";
   } else if (hasSarvam && preferred === "sarvam") {
     activeEngine = "sarvam";
     engineName = "Sarvam AI (Saaras Indic ASR)";
@@ -90,7 +90,7 @@ export async function GET() {
     engineName = "Groq Whisper Large v3 Turbo (Ultra Fast)";
   } else if (hasGemini) {
     activeEngine = "gemini";
-    engineName = "Google Gemini Flash Audio Engine";
+    engineName = "Google Gemini 3.5 Flash Audio Engine";
   } else if (hasSarvam) {
     activeEngine = "sarvam";
     engineName = "Sarvam AI (Saaras Indic ASR)";
@@ -449,7 +449,7 @@ async function runTranscriptionPipeline(file, language, durationSec = 30) {
   const providers = {
     gemini: {
       configured: Boolean(process.env.GEMINI_API_KEY?.trim()),
-      name: "Google Gemini Flash",
+      name: "Google Gemini 3.5 Flash",
       transcribe: () =>
         transcribeWithGemini(audioData, language, durationSec),
     },
@@ -646,20 +646,21 @@ The audio clip is approximately ${roundedDuration} seconds long.
 You MUST transcribe all spoken dialogue across the full ${roundedDuration} seconds until the very end of the clip.
 Do NOT stop early or truncate before the end of the audio.
 
-CRITICAL TRANSCRIPTION RULES (STRICT VERBATIM TRANSCRIBER - DO NOT TRANSLATE):
-1. EXACT SPOKEN WORDS (VERBATIM TRANSCRIBER, NOT A TRANSLATOR):
-   - Capture EXACTLY what the speaker speaks, word-for-word, sound-for-sound.
-   - You are a transcriber, NOT a translator. NEVER translate words or change the speaker's vocabulary!
-   - Zero typographical errors. Exact audio sync.
+CRITICAL FILM-GRADE SUBTITLE RULES:
+1. PRISTINE TELUGU SCRIPT (తెలుగు లిపి) & ZERO TYPOGRAPHICAL ERRORS:
+   - Must be written in authentic, flawless Telugu script (తెలుగు లిపి).
+   - Strict orthography: perfect guninthalu (గుణింతాలు), otthulu (ఒత్తులు), deerghalu (దీర్ఘాలు), and sunna (సున్న). Zero spelling mistakes.
+   - For popular conversational creator words (e.g. video, reels, friends, follow, share, subscribe, like, channel, tips), write the universally accepted standard Telugu spellings:
+     "వీడియో", "రీల్స్", "ఫ్రెండ్స్", "ఫాలో", "షేర్", "సబ్‌స్క్రైబ్", "లైక్", "ఛానల్", "టిప్స్".
+   - CRITICAL: DO NOT translate common conversational creator words into archaic dictionary terms (e.g. do NOT change "వీడియో" to "దృశ్యచిత్రం", do NOT change "ఫ్రెండ్స్" to "స్నేహితులు", do NOT change "సబ్‌స్క్రైబ్" to "సభ్యత్వాన్ని పొందండి"). Keep the authentic, conversational creator tone!
 
-2. "text" (EXACT SPOKEN WORDS IN TELUGU SCRIPT):
-   - Must be written in Telugu script (తెలుగు లిపి).
-   - If the speaker spoke Telugu: write the exact spoken Telugu words in Telugu script (e.g. "ఈ రోజు మనం").
-   - If the speaker spoke English words or Tanglish (e.g. "friends", "video", "subscribe", "tips", "channel"): phonetically transcribe the sound into Telugu script (e.g. "ఫ్రెండ్స్", "వీడియో", "సబ్‌స్క్రైబ్", "టిప్స్", "ఛానల్").
-   - CRITICAL: NEVER translate English words into formal Telugu meaning! (e.g. NEVER translate "friends" to "స్నేహితులు", NEVER translate "subscribe" to "సభ్యత్వాన్ని పొందండి", NEVER translate "video" to "దృశ్యచిత్రం"). Keep the EXACT words the speaker spoke!
+2. "text" (AUTHENTIC TELUGU SCRIPT - ALWAYS TELUGU SCRIPT):
+   - All subtitle lines in the "text" field must be in authentic Telugu script (తెలుగు లిపి).
+   - If the speaker spoke Telugu or mixed Telugu/English: provide the clean, natural dialogue in authentic Telugu script.
+   - If the speaker spoke English: provide the natural, high-quality Telugu movie subtitle in authentic Telugu script (తెలుగు లిపి).
 
 3. "romanizedText" (EXACT SPOKEN WORDS IN LATIN / ENGLISH LETTERS):
-   - Write the exact verbatim words the speaker uttered in Latin/English letters.
+   - What the creator actually uttered, in Latin/English letters.
    - If English words: write exact English words ("friends, welcome to my channel").
    - If Telugu/Tanglish words: write the phonetic Romanized spelling ("ee video lo manam chuddam").
 
@@ -668,11 +669,8 @@ CRITICAL TRANSCRIPTION RULES (STRICT VERBATIM TRANSCRIBER - DO NOT TRANSLATE):
    - The start timestamp must be when the speaker actually begins pronouncing that word.
    - The end timestamp must be when the speaker finishes pronouncing that word.
    - Do NOT divide a sentence's duration equally among its words.
-   - Do NOT estimate word timings based on word count or sentence length.
    - Preserve natural pauses between words.
-   - Never overlap consecutive word timestamps unless the audio genuinely contains overlapping speech.
    - All timestamps must be in seconds, measured from the beginning of the audio.
-   - Word timestamps must remain within their parent segment's start and end.
    - Return accurate individual timestamps for every word.
 
 Return ONLY a valid JSON object. Do not include Markdown code fences, comments, or explanations.
@@ -688,7 +686,7 @@ The detectedLanguage value must be exactly one of: "telugu", "english", or "mixe
       "start": 0.0,
       "end": 2.5,
       "text": "తెలుగు లిపిలో సినిమా శైలి క్యాప్షన్",
-      "romanizedText": "Exact verbatim spoken words as uttered",
+      "romanizedText": "Exact spoken words",
       "words": [
         {
           "word": "తెలుగు",
@@ -703,10 +701,12 @@ The detectedLanguage value must be exactly one of: "telugu", "english", or "mixe
 }`;
 
   const modelsToTry = [
-    "gemini-2.5-flash"
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-flash-lite-latest"
   ];
-  // Hostinger LiteSpeed timeout shield: 14s max per model so total request finishes well within 30s
-  const timeoutMs = 14000;
+  const timeoutMs = 45000;
   let lastError = null;
 
   for (const model of modelsToTry) {
@@ -847,7 +847,7 @@ async function transcribeWithSarvam(audioData, language = "auto") {
   const sarvamForm = new FormData();
   const audioBlob = new Blob([audioData.audioBuffer], { type: audioData.mimeType || "audio/mp3" });
   sarvamForm.append("file", audioBlob, audioData.filename || "audio.mp3");
-  sarvamForm.append("model", "saaras:v1");
+  sarvamForm.append("model", "saaras:v4");
   sarvamForm.append("language_code", language === "auto" ? "te-IN" : `${language}-IN`);
   sarvamForm.append("with_timestamps", "true");
 
@@ -865,7 +865,11 @@ async function transcribeWithSarvam(audioData, language = "auto") {
   }
 
   const data = await response.json();
-  return parseSarvamTranscript(data);
+  const segments = parseSarvamTranscript(data);
+  return {
+    detectedLanguage: data.language_code?.startsWith("te") ? "telugu" : "mixed",
+    segments
+  };
 }
 
 /**
@@ -908,10 +912,48 @@ async function transcribeWithOpenAI(audioData, language = "auto") {
  * Parse and chunk Sarvam AI response into digestible 2-3.5s subtitle cards
  */
 function parseSarvamTranscript(data) {
-  const wordsList = data.words || data.timestamps?.words || [];
   const fullTranscript = data.transcript || "";
+  const timestamps = data.timestamps;
 
-  if (!wordsList || wordsList.length === 0) {
+  // Sarvam returns parallel arrays: timestamps.words (strings), timestamps.start_time_seconds, timestamps.end_time_seconds
+  // Or in some SDK versions: data.words (objects)
+  const rawWords = Array.isArray(timestamps?.words)
+    ? timestamps.words
+    : (Array.isArray(data.words) ? data.words : []);
+  const startTimes = Array.isArray(timestamps?.start_time_seconds) ? timestamps.start_time_seconds : [];
+  const endTimes = Array.isArray(timestamps?.end_time_seconds) ? timestamps.end_time_seconds : [];
+
+  if (!rawWords || rawWords.length === 0) {
+    if (fullTranscript.trim()) {
+      return chunkRawTextIntoSegments(fullTranscript);
+    }
+    return [];
+  }
+
+  const wordItems = rawWords.map((w, index) => {
+    let rawWord = "";
+    let start = 0;
+    let end = 0;
+
+    if (typeof w === "string") {
+      rawWord = w.trim();
+      start = Number((startTimes[index] ?? (index * 0.4)).toFixed(2));
+      end = Number((endTimes[index] ?? (start + 0.35)).toFixed(2));
+    } else if (w && typeof w === "object") {
+      rawWord = (w.word || "").trim();
+      start = Number((w.start_time_seconds ?? w.start ?? (index * 0.4)).toFixed(2));
+      end = Number((w.end_time_seconds ?? w.end ?? (start + 0.35)).toFixed(2));
+    }
+
+    return {
+      word: rawWord,
+      romanized: teluguToRomanized(rawWord),
+      start,
+      end
+    };
+  }).filter(item => Boolean(item.word));
+
+  if (wordItems.length === 0) {
     if (fullTranscript.trim()) {
       return chunkRawTextIntoSegments(fullTranscript);
     }
@@ -922,34 +964,22 @@ function parseSarvamTranscript(data) {
   let currentWords = [];
   let chunkStartTime = null;
 
-  wordsList.forEach((w, index) => {
-    const rawWord = (w.word || "").trim();
-    if (!rawWord) return;
+  wordItems.forEach((cw, index) => {
+    if (chunkStartTime === null) chunkStartTime = cw.start;
+    currentWords.push(cw);
 
-    const start = Number((w.start_time_seconds ?? w.start ?? 0).toFixed(2));
-    const end = Number((w.end_time_seconds ?? w.end ?? (start + 0.45)).toFixed(2));
-
-    if (chunkStartTime === null) chunkStartTime = start;
-
-    currentWords.push({
-      word: rawWord,
-      romanized: teluguToRomanized(rawWord),
-      start,
-      end
-    });
-
-    const currentDuration = end - chunkStartTime;
-    const isPunctuationBreak = /[.!?|।]/.test(rawWord);
+    const currentDuration = cw.end - chunkStartTime;
+    const isPunctuationBreak = /[.!?|।]/.test(cw.word);
     const isNaturalChunkSize = currentWords.length >= 6 || currentDuration >= 3.2;
 
-    if (isPunctuationBreak || isNaturalChunkSize || index === wordsList.length - 1) {
-      const segText = currentWords.map(cw => cw.word).join(" ");
-      const segRo = currentWords.map(cw => cw.romanized).join(" ");
+    if (isPunctuationBreak || isNaturalChunkSize || index === wordItems.length - 1) {
+      const segText = currentWords.map(w => w.word).join(" ");
+      const segRo = currentWords.map(w => w.romanized).join(" ");
 
       segments.push({
         id: `seg-${segments.length + 1}`,
         start: chunkStartTime,
-        end: end,
+        end: cw.end,
         text: segText,
         romanizedText: segRo,
         words: [...currentWords]
@@ -1086,21 +1116,20 @@ async function ensureDualScriptNative(segments) {
       }));
 
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiKey}`,
         {
           method: "POST",
-          signal: AbortSignal.timeout(6000),
+          signal: AbortSignal.timeout(15000),
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [
               {
                 parts: [
                   {
-                    text: `You are a verbatim Telugu transcriber for reels. Transcribe these subtitle lines into Telugu script (తెలుగు లిపి) preserving the EXACT words spoken!
-CRITICAL RULES:
-1. You are a transcriber, NOT a translator. DO NOT translate words into formal Telugu!
-2. If an English/Tanglish word is spoken (e.g. "friends", "video", "tips", "share", "channel"), transcribe its phonetic sound in Telugu script (e.g. "ఫ్రెండ్స్", "వీడియో", "టిప్స్", "షేర్", "ఛానల్"). NEVER translate "friends" to "స్నేహితులు" or "channel" to "మాధ్యమం"!
-3. Keep the exact words the creator actually said.
+                    text: `You are a world-class Telugu film subtitle and captioning engine.
+Convert the provided subtitle lines into authentic, film-grade native Telugu script (తెలుగు లిపి) with strict, pristine Telugu spelling and grammar (సరైన గుణింతాలు, ఒత్తులు, దీర్ఘాలు).
+Zero typographical errors.
+Keep standard creator terms in standard Telugu spelling: "వీడియో", "రీల్స్", "ఫ్రెండ్స్", "షేర్", "ఫాలో", "లైక్", "సబ్‌స్క్రైబ్", "ఛానల్", "టిప్స్". Do NOT translate them into archaic dictionary terms.
 Return ONLY JSON: {"segments": [{"id": "...", "text": "తెలుగు లిపి"}]}.\nLines to transcribe:\n${JSON.stringify(inputLines)}`
                   }
                 ]
