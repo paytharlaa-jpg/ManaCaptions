@@ -79,21 +79,24 @@ export async function GET() {
   let activeEngine = "simulated";
   let engineName = "Offline Telugu Simulation";
 
-  if (hasGemini && preferred !== "groq" && preferred !== "sarvam") {
+  if (hasGemini && preferred !== "sarvam" && preferred !== "groq") {
     activeEngine = "gemini";
-    engineName = "Google Gemini 2.5 Flash Audio Engine";
+    engineName = "Google Gemini Flash Audio Engine";
+  } else if (hasSarvam && preferred === "sarvam") {
+    activeEngine = "sarvam";
+    engineName = "Sarvam AI (Saaras Indic ASR)";
   } else if (hasGroq && preferred === "groq") {
     activeEngine = "groq";
     engineName = "Groq Whisper Large v3 Turbo (Ultra Fast)";
   } else if (hasGemini) {
     activeEngine = "gemini";
-    engineName = "Google Gemini 2.5 Flash Audio Engine";
-  } else if (hasGroq) {
-    activeEngine = "groq";
-    engineName = "Groq Whisper Large v3 Turbo (Ultra Fast)";
+    engineName = "Google Gemini Flash Audio Engine";
   } else if (hasSarvam) {
     activeEngine = "sarvam";
     engineName = "Sarvam AI (Saaras Indic ASR)";
+  } else if (hasGroq) {
+    activeEngine = "groq";
+    engineName = "Groq Whisper Large v3 Turbo (Ultra Fast)";
   } else if (hasOpenAI) {
     activeEngine = "openai";
     engineName = "OpenAI Whisper-1";
@@ -446,19 +449,19 @@ async function runTranscriptionPipeline(file, language, durationSec = 30) {
   const providers = {
     gemini: {
       configured: Boolean(process.env.GEMINI_API_KEY?.trim()),
-      name: "Google Gemini 2.5 Flash",
+      name: "Google Gemini Flash",
       transcribe: () =>
         transcribeWithGemini(audioData, language, durationSec),
+    },
+    sarvam: {
+      configured: Boolean(process.env.SARVAM_API_KEY?.trim()),
+      name: "Sarvam AI Saaras (Indic Telugu ASR)",
+      transcribe: () => transcribeWithSarvam(audioData, language),
     },
     groq: {
       configured: Boolean(process.env.GROQ_API_KEY?.trim()),
       name: "Groq Whisper",
       transcribe: () => transcribeWithGroq(audioData, language),
-    },
-    sarvam: {
-      configured: Boolean(process.env.SARVAM_API_KEY?.trim()),
-      name: "Sarvam AI Saaras",
-      transcribe: () => transcribeWithSarvam(audioData, language),
     },
     openai: {
       configured: Boolean(process.env.OPENAI_API_KEY?.trim()),
