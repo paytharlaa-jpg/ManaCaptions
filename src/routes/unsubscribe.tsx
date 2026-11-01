@@ -1,0 +1,6 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { pageMeta } from "@/lib/metadata";
+export const Route=createFileRoute("/unsubscribe")({head:()=>pageMeta("Unsubscribe","Manage your optional ManaCaptions marketing email subscription."),validateSearch:(search:Record<string,unknown>)=>({token:typeof search['token']==="string"?search['token']:""}),component:Unsubscribe});
+function Unsubscribe(){const {token}=Route.useSearch();const [state,setState]=useState(""),[busy,setBusy]=useState(false);async function submit(){setBusy(true);try{const result=await fetch(`/api/public/unsubscribe?token=${encodeURIComponent(token)}`,{method:"POST"});setState(result.ok?"You have been unsubscribed from marketing emails.":"This unsubscribe link is invalid or expired.");}catch{setState("Could not unsubscribe. Please try again.");}finally{setBusy(false);}}return <main className="mx-auto max-w-lg px-5 py-20"><h1 className="text-2xl font-semibold">Unsubscribe from ManaCaptions emails</h1><p className="my-5 text-sm text-muted-foreground">Essential account and purchase notices are not affected.</p>{state?<p role="status">{state}</p>:<Button disabled={busy||!token} onClick={submit}>{busy?"Saving…":"Unsubscribe"}</Button>}</main>;}

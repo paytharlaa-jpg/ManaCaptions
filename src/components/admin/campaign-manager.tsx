@@ -1,0 +1,14 @@
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
+import { saveCampaign } from "@/lib/api/control-center.functions";
+import { RecordTable } from "./record-table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+export function CampaignManager(){const [subject,setSubject]=useState(""),[body,setBody]=useState(""),[audience,setAudience]=useState("subscribers"),[saving,setSaving]=useState(false);const save=useServerFn(saveCampaign),qc=useQueryClient();async function submit(){setSaving(true);try{await save({data:{subject,body,audience}});toast.success("Campaign draft saved");setSubject("");setBody("");void qc.invalidateQueries({queryKey:["control","campaigns"]});}catch(e){toast.error(e instanceof Error?e.message:"Could not save draft");}finally{setSaving(false);}}
+ return <div className="space-y-6"><div className="grid gap-6 xl:grid-cols-2"><div className="space-y-4"><div><Label htmlFor="campaign-subject">Subject</Label><Input id="campaign-subject" maxLength={150} value={subject} onChange={(e)=>setSubject(e.target.value)} /></div><div><Label htmlFor="campaign-body">Message (plain text)</Label><Textarea id="campaign-body" rows={7} maxLength={20000} value={body} onChange={(e)=>setBody(e.target.value)} /></div><Label>Eligible audience</Label><Select value={audience} onValueChange={setAudience}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[["subscribers","All opted-in subscribers"],["paid","Paying subscribers"],["free","Free-trial subscribers"],["recent","Recently registered subscribers"],["transcription","Subscribers with transcription jobs"],["rendering","Subscribers with rendering jobs"]].map(([value,label])=><SelectItem key={value} value={value??"subscribers"}>{label}</SelectItem>)}</SelectContent></Select><div className="flex flex-wrap gap-2"><Button onClick={submit} disabled={saving||!subject.trim()||!body.trim()}>{saving?"Saving…":"Save draft"}</Button><Button variant="outline" disabled>Send test</Button><Button variant="outline" disabled>Schedule / send</Button></div><p className="text-sm text-muted-foreground">Email sending awaits an approved provider and verified sender domain. Opt-outs will remain excluded.</p></div><section className="border-l border-border pl-5"><h2 className="mb-4 text-sm font-semibold">Email preview</h2><h3 className="break-words text-lg">{subject||"Subject"}</h3><p className="mt-4 whitespace-pre-wrap break-words text-sm">{body||""}</p></section></div><RecordTable section="campaigns" /></div>;
+}

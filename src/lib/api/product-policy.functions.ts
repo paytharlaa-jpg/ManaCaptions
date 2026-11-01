@@ -1,0 +1,3 @@
+import { createServerFn } from "@tanstack/react-start";
+import { requireActiveAccount } from "./account-middleware";
+export const customerProductPolicy=createServerFn({method:"POST"}).middleware([requireActiveAccount]).handler(async()=>{const {getProductPolicy}=await import("@/lib/admin/product-policy.server");const p=await getProductPolicy();return {maxVideoSeconds:p.maxVideoSeconds,transcriptionCreditsPerMinute:p.transcriptionCreditsPerMinute};});

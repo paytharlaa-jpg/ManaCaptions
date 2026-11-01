@@ -1,0 +1,9 @@
+import { useQuery,useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { setMarketingConsent } from "@/lib/api/marketing.functions";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+export function MarketingPreference(){const qc=useQueryClient(),save=useServerFn(setMarketingConsent);const [saving,setSaving]=useState(false);const {data,error}=useQuery({queryKey:["marketing","consent"],queryFn:async()=>{const {data:user}=await supabase.auth.getUser();if(!user.user)throw new Error("Not signed in");const {data:row,error}=await supabase.from("user_marketing_preferences").select("consent").eq("user_id",user.user.id).maybeSingle();if(error)throw error;return row?.consent??false;}});async function change(consent:boolean){setSaving(true);try{await save({data:{consent}});toast.success(consent?"Product emails enabled":"Unsubscribed from marketing emails");await qc.invalidateQueries({queryKey:["marketing","consent"]});}catch{toast.error("Could not save preference");}finally{setSaving(false);}}return <section className="border-y border-border py-5"><div className="flex items-center justify-between gap-3"><Label htmlFor="marketing-consent">Product updates & marketing emails</Label><Switch id="marketing-consent" checked={data??false} disabled={saving||data===undefined||Boolean(error)} onCheckedChange={change} /></div><p className="mt-2 text-sm text-muted-foreground">Optional. Turn this off to unsubscribe. Essential account and purchase notices are separate.</p>{error&&<p role="alert" className="text-sm text-destructive">Could not load email preference.</p>}</section>;}

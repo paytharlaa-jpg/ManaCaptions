@@ -1,0 +1,2 @@
+import { productSettingsSchema,DEFAULT_PRODUCT_SETTINGS } from "./settings-schema";
+export async function getProductPolicy(){const {supabaseAdmin:sb}=await import("@/integrations/supabase/client.server");const {data,error}=await sb.from("app_settings").select("value").eq("key","product").maybeSingle();if(error)throw new Error("Could not load product policy");return productSettingsSchema.parse(data?.value??DEFAULT_PRODUCT_SETTINGS);}

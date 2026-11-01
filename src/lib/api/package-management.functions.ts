@@ -1,0 +1,6 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireActiveAccount } from "./account-middleware";
+import { assertOwner } from "./owner-auth";
+const schema=z.object({id:z.string().min(1).max(40),name:z.string().trim().min(1).max(80),priceInr:z.number().int().min(1).max(100000),credits:z.number().int().min(1).max(100000),active:z.boolean(),highlighted:z.boolean(),sort:z.number().int().min(0).max(1000),reason:z.string().trim().min(1).max(200)});
+export const updateCreditPackage=createServerFn({method:"POST"}).middleware([requireActiveAccount]).inputValidator((input:z.infer<typeof schema>)=>schema.parse(input)).handler(async({data,context})=>{await assertOwner(context);const {supabaseAdmin:sb}=await import("@/integrations/supabase/client.server");const {error}=await sb.rpc("owner_update_package",{_actor:context.userId,_id:data.id,_value:{name:data.name,price_inr:data.priceInr,credits:data.credits,active:data.active,highlighted:data.highlighted,sort:data.sort},_reason:data.reason});if(error)throw new Error("Could not update package");return {ok:true};});

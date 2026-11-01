@@ -1,0 +1,5 @@
+REVOKE INSERT,UPDATE ON public.projects FROM authenticated;
+GRANT INSERT(user_id,title,storage_path,duration_seconds,language,style_preset,caption_style) ON public.projects TO authenticated;
+GRANT UPDATE(title,style_preset,caption_style) ON public.projects TO authenticated;
+CREATE OR REPLACE FUNCTION public.new_project_duration_guard() RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $$ DECLARE max_seconds integer; BEGIN SELECT coalesce((value->>'maxVideoSeconds')::integer,300) INTO max_seconds FROM public.app_settings WHERE key='product'; max_seconds:=coalesce(max_seconds,300); IF NEW.duration_seconds IS NULL OR NEW.duration_seconds<=0 OR NEW.duration_seconds>max_seconds THEN RAISE EXCEPTION 'VIDEO_DURATION_LIMIT'; END IF; IF NEW.storage_path IS NULL OR NEW.storage_path NOT LIKE NEW.user_id::text||'/%' THEN RAISE EXCEPTION 'INVALID_SOURCE_PATH'; END IF; RETURN NEW; END $$;
+CREATE TRIGGER new_project_duration_guard BEFORE INSERT ON public.projects FOR EACH ROW EXECUTE FUNCTION public.new_project_duration_guard();
