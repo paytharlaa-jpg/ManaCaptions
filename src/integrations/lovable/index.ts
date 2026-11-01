@@ -38,6 +38,10 @@ export const lovable = {
           return { error };
         }
 
+        if (data?.url && typeof window !== "undefined") {
+          window.location.href = data.url;
+        }
+
         return { error: null, redirected: true, data };
       }
 
