@@ -22,7 +22,7 @@ if (!fs.existsSync(nextIndex) && fs.existsSync(publicIndex)) {
   fs.copyFileSync(publicIndex, nextIndex);
 }
 
-// 4. Sanitize all HTML files in .next and public (strip binary null bytes and ensure clean route IDs)
+// 4. Sanitize all HTML files in .next and public (strip binary null bytes and ensure exact route IDs)
 function sanitizeHtmlFiles(dir) {
   if (!fs.existsSync(dir)) return;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -32,10 +32,27 @@ function sanitizeHtmlFiles(dir) {
       sanitizeHtmlFiles(fullPath);
     } else if (entry.name.endsWith(".html")) {
       let content = fs.readFileSync(fullPath, "utf8");
+      let changed = false;
+
       if (content.includes("\u0000")) {
-        content = content.replace(/__root__\u0000/g, "__root__");
-        content = content.replace(/i:"\u0000\u0000"/g, 'i:"/"');
         content = content.replace(/\u0000/g, "");
+        changed = true;
+      }
+
+      // Match the manifest route key and sync $R[12] route id exactly
+      const idx = content.indexOf("routes:$R");
+      if (idx !== -1) {
+        const sub = content.substring(idx, idx + 1000);
+        const routeMatch = sub.match(/,"(\/[^"]*)":\$R/);
+        if (routeMatch) {
+          const routeKey = routeMatch[1];
+          const before = content;
+          content = content.replace(/(\$R\[12\]=\{i:)"[^"]*"/, `$1"${routeKey}"`);
+          if (content !== before) changed = true;
+        }
+      }
+
+      if (changed) {
         fs.writeFileSync(fullPath, content, "utf8");
       }
     }
