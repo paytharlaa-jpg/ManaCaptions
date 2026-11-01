@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-CXCudH8Z.js";import{t}from"./record-table-C9pBJHdY.js";var n=e();function r(){return(0,n.jsx)(t,{section:`audit`})}export{r as component};

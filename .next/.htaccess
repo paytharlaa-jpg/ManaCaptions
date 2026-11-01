@@ -1,0 +1,18 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule .* - [E=noconntimeout:1]
+  RewriteRule .* - [E=noabort:1]
+
+  # If requested path is a directory, serve index.html
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteCond %{REQUEST_FILENAME}/index.html -f
+  RewriteRule ^(.*)$ $1/index.html [L]
+
+  # If requested file exists, serve directly
+  RewriteCond %{REQUEST_FILENAME} -f
+  RewriteRule ^ - [L]
+
+  # Fallback to index.html for SPA router
+  RewriteRule ^ index.html [L]
+</IfModule>
