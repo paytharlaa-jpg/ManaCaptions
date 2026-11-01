@@ -10,12 +10,19 @@ if (!fs.existsSync(nextDir)) {
   fs.mkdirSync(nextDir, { recursive: true });
 }
 
-// 2. Copy all prerendered static pages, assets, and headers to .next
+// 2. Copy all built assets and static files to .next
 if (fs.existsSync(outputPublic)) {
   fs.cpSync(outputPublic, nextDir, { recursive: true });
 }
 
-// 3. Create .htaccess for LiteSpeed / Apache routing
+// 3. Ensure index.html exists in .next
+const publicIndex = path.join(root, "public", "index.html");
+const nextIndex = path.join(nextDir, "index.html");
+if (!fs.existsSync(nextIndex) && fs.existsSync(publicIndex)) {
+  fs.copyFileSync(publicIndex, nextIndex);
+}
+
+// 4. Create .htaccess for LiteSpeed / Apache routing
 const htaccessContent = `<IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
