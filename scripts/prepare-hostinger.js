@@ -22,7 +22,30 @@ if (!fs.existsSync(nextIndex) && fs.existsSync(publicIndex)) {
   fs.copyFileSync(publicIndex, nextIndex);
 }
 
-// 4. Create .htaccess for LiteSpeed / Apache routing
+// 4. Sanitize all HTML files in .next and public (strip binary null bytes and ensure clean route IDs)
+function sanitizeHtmlFiles(dir) {
+  if (!fs.existsSync(dir)) return;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      sanitizeHtmlFiles(fullPath);
+    } else if (entry.name.endsWith(".html")) {
+      let content = fs.readFileSync(fullPath, "utf8");
+      if (content.includes("\u0000")) {
+        content = content.replace(/__root__\u0000/g, "__root__");
+        content = content.replace(/i:"\u0000\u0000"/g, 'i:"/"');
+        content = content.replace(/\u0000/g, "");
+        fs.writeFileSync(fullPath, content, "utf8");
+      }
+    }
+  }
+}
+
+sanitizeHtmlFiles(nextDir);
+sanitizeHtmlFiles(path.join(root, "public"));
+
+// 5. Create .htaccess for LiteSpeed / Apache routing
 const htaccessContent = `<IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
