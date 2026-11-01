@@ -10,9 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { projectsQuery, walletQuery } from "@/lib/api/queries";
-import { deleteProject } from "@/lib/api/projects.functions";
 import { formatClock } from "@/lib/captions/format";
 import { DashboardAnnouncements } from "@/components/dashboard/announcements";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => pageMeta("Dashboard", "Your private ManaCaptions projects, announcements and caption credit balance."),
@@ -31,15 +31,21 @@ function Dashboard() {
   const { data: balance } = useQuery(walletQuery);
   const { data: projects, isLoading } = useQuery(projectsQuery);
   const qc = useQueryClient();
-  const remove = useServerFn(deleteProject);
 
   async function onDelete(id: string) {
     if (!confirm("Delete this project and its video?")) return;
     try {
-      await remove({ data: { projectId: id } });
+      const { data: p } = await supabase.from("projects").select("storage_path").eq("id", id).maybeSingle();
+      if (p?.storage_path) {
+        await supabase.storage.from("videos").remove([p.storage_path]);
+      }
+      const { error } = await supabase.from("projects").delete().eq("id", id);
+      if (error) throw error;
       toast.success("Project deleted");
       void qc.invalidateQueries({ queryKey: ["projects"] });
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not delete project"); }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete project");
+    }
   }
 
   return (

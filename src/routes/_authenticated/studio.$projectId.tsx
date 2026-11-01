@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ArrowLeft, Download, Info, Loader2, Save } from "lucide-react";
@@ -10,7 +9,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CaptionOverlay } from "@/components/studio/caption-overlay";
 import { SegmentEditor } from "@/components/studio/segment-editor";
 import { studioQuery } from "@/lib/api/queries";
-import { romanizeTranscript, saveTranscript } from "@/lib/api/projects.functions";
 import { presetStyle } from "@/lib/captions/presets";
 import { captionStyleSchema, type CaptionStyle } from "@/lib/captions/style-schema";
 import { CaptionStylePanel } from "@/components/studio/caption-style-panel";
@@ -18,10 +16,11 @@ import { RenderSettings } from "@/components/studio/render-settings";
 import { EDITOR_FONT_URL } from "@/lib/captions/font-registry";
 import { generateAss, ASS_LIMITATIONS } from "@/lib/captions/ass-generator";
 import { pageMeta } from "@/lib/metadata";
-import { saveCaptionStyle } from "@/lib/api/caption-style.functions";
 import { toSrt, toTxt, toVtt } from "@/lib/captions/format";
 import type { ScriptMode, TranscriptSegment } from "@/lib/captions/types";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { getGroqKey } from "@/lib/transcription/client-transcribe";
 
 export const Route = createFileRoute("/_authenticated/studio/$projectId")({
   head: () => ({ ...pageMeta("Caption Studio", "Edit synchronized Telugu captions, customize styles and prepare secure MP4 exports."), links: [{ rel: "stylesheet", href: EDITOR_FONT_URL }] }),
@@ -42,9 +41,6 @@ function Studio() {
   const { projectId } = Route.useParams();
   const { data } = useSuspenseQuery(studioQuery(projectId));
   const qc = useQueryClient();
-  const save = useServerFn(saveTranscript);
-  const saveStyle = useServerFn(saveCaptionStyle);
-  const romanize = useServerFn(romanizeTranscript);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const [script, setScript] = useState<ScriptMode>("telugu");
@@ -96,8 +92,35 @@ function Studio() {
     if (next === "roman" && !roman) {
       setConverting(true);
       try {
-        const res = await romanize({ data: { projectId } });
-        setRoman(res.segments);
+        const words = telugu.flatMap((s) => s.words.map((w) => w.text));
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${getGroqKey()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "llama-3.1-8b-instant",
+            messages: [
+              {
+                role: "system",
+                content:
+                  "Convert the list of Telugu words to casual Romanized Telugu (e.g. 'నమస్కారం' -> 'namaskaram'). Keep English words unchanged. Respond with JSON: {\"words\": [\"word1\", ...]} with the exact same count and order.",
+              },
+              { role: "user", content: JSON.stringify(words) },
+            ],
+            response_format: { type: "json_object" },
+          }),
+        });
+        const out = await res.json();
+        const transliterated: string[] = JSON.parse(out.choices[0].message.content).words || [];
+        let i = 0;
+        const romanized: TranscriptSegment[] = telugu.map((s) => {
+          const ws = s.words.map((w) => ({ ...w, text: transliterated[i++] || w.text }));
+          return { ...s, words: ws, text: ws.map((w) => w.text).join(" ") };
+        });
+        setRoman(romanized);
+        await supabase.from("transcripts").update({ romanized_segments: romanized as any }).eq("project_id", projectId);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Could not convert");
         setConverting(false);
@@ -111,11 +134,25 @@ function Studio() {
   async function onSave() {
     setSaving(true);
     try {
-      await saveStyle({ data: { projectId, style } });
+      const { error: projErr } = await supabase
+        .from("projects")
+        .update({
+          style_preset: preset,
+          caption_style: style as any,
+        })
+        .eq("id", projectId);
+      if (projErr) throw projErr;
+
       if (transcriptDirty) {
-        await save({ data: { projectId, segments: telugu, script: "telugu", stylePreset: preset, captionStyle: style } });
-        if (roman) await save({ data: { projectId, segments: roman, script: "roman", stylePreset: preset, captionStyle: style } });
+        const updatePayload: Record<string, any> = { segments: telugu };
+        if (roman) updatePayload.romanized_segments = roman;
+        const { error: transErr } = await supabase
+          .from("transcripts")
+          .update(updatePayload)
+          .eq("project_id", projectId);
+        if (transErr) throw transErr;
       }
+
       setDirty(false);
       setTranscriptDirty(false);
       toast.success("Saved");

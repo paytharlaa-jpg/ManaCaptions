@@ -1,8 +1,6 @@
 import { pageMeta } from "@/lib/metadata";
-import { customerProductPolicy } from "@/lib/api/product-policy.functions";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { FileVideo, Loader2, UploadCloud, X } from "lucide-react";
@@ -15,8 +13,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { supabase } from "@/integrations/supabase/client";
 import { extractWavFromVideo } from "@/lib/audio";
 import { ACCEPTED_VIDEO_TYPES, creditsForDuration, MAX_AUDIO_SECONDS, MAX_VIDEO_BYTES } from "@/lib/credits";
-import { createProject, startTranscription } from "@/lib/api/projects.functions";
 import { walletQuery } from "@/lib/api/queries";
+import { transcribeAudioClient } from "@/lib/transcription/client-transcribe";
 
 export const Route = createFileRoute("/_authenticated/upload")({
   head: () => pageMeta("Upload video", "Upload a private video up to five minutes for Telugu or English captions."),
@@ -26,10 +24,11 @@ export const Route = createFileRoute("/_authenticated/upload")({
 type Stage = "idle" | "reading" | "uploading" | "transcribing";
 const STAGE_TEXT: Record<Stage, string> = {
   idle: "",
-  reading: "Reading audio from your video…",
-  uploading: "Uploading securely…",
-  transcribing: "AI is writing your captions. This can take a minute…",
+  reading: "Reading audio from your video...",
+  uploading: "Uploading securely to cloud storage...",
+  transcribing: "AI is writing your captions with word-level timing...",
 };
+
 const LANGS = [
   { v: "te", label: "Telugu" },
   { v: "mixed", label: "Telugu + English" },
@@ -39,12 +38,8 @@ const LANGS = [
 function UploadPage() {
   const { user } = Route.useRouteContext();
   const { data: balance } = useQuery(walletQuery);
-  const policyFn = useServerFn(customerProductPolicy);
-  const { data: policy } = useQuery({ queryKey: ["product-policy"], queryFn: () => policyFn() });
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const create = useServerFn(createProject);
-  const transcribe = useServerFn(startTranscription);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -70,7 +65,7 @@ function UploadPage() {
     v.preload = "metadata";
     v.onloadedmetadata = () => {
       URL.revokeObjectURL(url);
-      if (v.duration > (policy?.maxVideoSeconds ?? MAX_AUDIO_SECONDS)) {
+      if (v.duration > MAX_AUDIO_SECONDS) {
         toast.error("Video must be 5 minutes or shorter.");
         return;
       }
@@ -82,7 +77,7 @@ function UploadPage() {
     v.src = url;
   }
 
-  const cost = duration ? creditsForDuration(duration) * (policy?.transcriptionCreditsPerMinute ?? 1) : 0;
+  const cost = duration ? creditsForDuration(duration) : 0;
   const enough = balance !== undefined && balance >= cost;
   const busy = stage !== "idle";
 
@@ -90,52 +85,123 @@ function UploadPage() {
     if (!file || !duration || !title.trim()) return;
     try {
       setStage("reading");
-      setProgress(10);
+      setProgress(15);
       const { wav } = await extractWavFromVideo(file);
+
       setStage("uploading");
-      setProgress(30);
+      setProgress(35);
       const id = crypto.randomUUID();
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "mp4";
       const videoPath = `${user.id}/${id}/video.${ext}`;
       const audioPath = `${user.id}/${id}/audio.wav`;
+
+      // 1. Upload files to private Supabase Storage bucket
       const [v, a] = await Promise.all([
-        supabase.storage.from("videos").upload(videoPath, file, { contentType: file.type }),
-        supabase.storage.from("videos").upload(audioPath, wav, { contentType: "audio/wav" }),
+        supabase.storage.from("videos").upload(videoPath, file, { contentType: file.type, upsert: true }),
+        supabase.storage.from("videos").upload(audioPath, wav, { contentType: "audio/wav", upsert: true }),
       ]);
-      if (v.error || a.error) throw new Error("Upload failed. Please try again.");
+      if (v.error || a.error) {
+        console.error("Storage upload error:", v.error || a.error);
+        throw new Error("Upload failed. Please try again.");
+      }
+
       setProgress(55);
-      const project = await create({ data: { title: title.trim(), language, storagePath: videoPath, durationSeconds: duration } });
+
+      // 2. Create the project directly in Supabase
+      const { data: project, error: projError } = await supabase
+        .from("projects")
+        .insert({
+          id,
+          user_id: user.id,
+          title: title.trim(),
+          language,
+          storage_path: videoPath,
+          duration_seconds: duration,
+          style_preset: "bold-pop",
+        })
+        .select("id")
+        .single();
+
+      if (projError || !project) {
+        console.error("Project creation error:", projError);
+        throw new Error(projError?.message || "Could not create project.");
+      }
+
+      // 3. Deduct / reserve credits atomically
+      if (cost > 0) {
+        await supabase.rpc("apply_credit", {
+          _user_id: user.id,
+          _kind: "reserve",
+          _amount: -cost,
+          _reference: project.id,
+          _note: `Transcription (${cost} min)`,
+        });
+      }
+
       setStage("transcribing");
-      setProgress(70);
-      const res = await transcribe({ data: { projectId: project.id, audioPath } });
+      setProgress(75);
+
+      // 4. Run AI speech recognition
+      const result = await transcribeAudioClient({ wavBlob: wav, language });
+
+      setProgress(90);
+
+      // 5. Save the generated transcripts directly into Supabase
+      const { error: transError } = await supabase.from("transcripts").upsert({
+        project_id: project.id,
+        user_id: user.id,
+        language: result.language,
+        segments: result.segments as any,
+        timing_source: "provider",
+      });
+
+      if (transError) {
+        console.warn("Transcripts save notice:", transError);
+      }
+
+      // 6. Record transcription job
+      await supabase.from("transcription_jobs").insert({
+        project_id: project.id,
+        user_id: user.id,
+        status: "completed",
+        credits_reserved: cost,
+        provider: "groq-whisper",
+      });
+
       void qc.invalidateQueries({ queryKey: ["wallet"] });
       void qc.invalidateQueries({ queryKey: ["projects"] });
-      if (!res.ok) {
-        toast.error(res.error);
-        setStage("idle");
-        return;
-      }
+
       setProgress(100);
       toast.success("Captions are ready!");
       void navigate({ to: "/studio/$projectId", params: { projectId: project.id } });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Something went wrong");
+      console.error("Submit error:", err);
+      toast.error(err instanceof Error ? err.message : "Something went wrong during caption creation");
       setStage("idle");
     }
   }
 
   return (
     <div className="mx-auto max-w-2xl animate-fade-up">
-      <PageHeader title="Upload a video" subtitle="MP4, MOV, WebM or MKV · up to 200 MB · up to 5 minutes" />
+      <PageHeader title="Upload a video" subtitle="MP4, MOV, WebM or MKV • up to 200 MB • up to 5 minutes" />
 
       {!file ? (
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files[0]); }}
-          className={`flex w-full flex-col items-center justify-center rounded-3xl border-2 border-dashed p-12 text-center transition-colors ${dragOver ? "border-primary bg-accent" : "border-border bg-card hover:border-primary/50"}`}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            pick(e.dataTransfer.files[0]);
+          }}
+          className={`flex w-full flex-col items-center justify-center rounded-3xl border-2 border-dashed p-12 text-center transition-colors ${
+            dragOver ? "border-primary bg-accent" : "border-border bg-card hover:border-primary/50"
+          }`}
         >
           <span className="grid size-14 place-items-center rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
             <UploadCloud className="size-6" />
@@ -150,11 +216,20 @@ function UploadPage() {
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium">{file.name}</p>
               <p className="text-xs text-muted-foreground">
-                {(file.size / 1024 / 1024).toFixed(1)} MB · {Math.floor((duration ?? 0) / 60)}m {Math.round((duration ?? 0) % 60)}s
+                {(file.size / 1024 / 1024).toFixed(1)} MB • {Math.floor((duration ?? 0) / 60)}m{" "}
+                {Math.round((duration ?? 0) % 60)}s
               </p>
             </div>
             {!busy && (
-              <Button variant="ghost" size="icon" aria-label="Remove file" onClick={() => { setFile(null); setDuration(null); }}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Remove file"
+                onClick={() => {
+                  setFile(null);
+                  setDuration(null);
+                }}
+              >
                 <X />
               </Button>
             )}
@@ -168,9 +243,20 @@ function UploadPage() {
 
           <div className="space-y-2">
             <Label>Spoken language</Label>
-            <RadioGroup value={language} onValueChange={(v) => setLanguage(v as typeof language)} className="grid grid-cols-3 gap-2" disabled={busy}>
+            <RadioGroup
+              value={language}
+              onValueChange={(v) => setLanguage(v as typeof language)}
+              className="grid grid-cols-3 gap-2"
+              disabled={busy}
+            >
               {LANGS.map((l) => (
-                <Label key={l.v} htmlFor={`lang-${l.v}`} className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 text-center text-sm ${language === l.v ? "border-primary bg-accent" : "border-border"}`}>
+                <Label
+                  key={l.v}
+                  htmlFor={`lang-${l.v}`}
+                  className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 text-center text-sm ${
+                    language === l.v ? "border-primary bg-accent" : "border-border"
+                  }`}
+                >
                   <RadioGroupItem id={`lang-${l.v}`} value={l.v} className="sr-only" />
                   {l.label}
                 </Label>
@@ -179,14 +265,18 @@ function UploadPage() {
           </div>
 
           <div className="flex items-center justify-between rounded-xl bg-muted p-4 text-sm">
-            <span>Cost: <b>{cost} credits</b></span>
-            <span className="text-muted-foreground">Balance: {balance ?? "–"}</span>
+            <span>
+              Cost: <b>{cost} credits</b>
+            </span>
+            <span className="text-muted-foreground">Balance: {balance ?? "..."}</span>
           </div>
 
           {busy && (
             <div className="space-y-2">
               <Progress value={progress} />
-              <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> {STAGE_TEXT[stage]}</p>
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> {STAGE_TEXT[stage]}
+              </p>
             </div>
           )}
 
@@ -202,7 +292,13 @@ function UploadPage() {
         </div>
       )}
 
-      <input ref={inputRef} type="file" accept={ACCEPTED_VIDEO_TYPES.join(",")} className="hidden" onChange={(e) => pick(e.target.files?.[0])} />
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED_VIDEO_TYPES.join(",")}
+        className="hidden"
+        onChange={(e) => pick(e.target.files?.[0])}
+      />
     </div>
   );
 }
