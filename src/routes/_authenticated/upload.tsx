@@ -15,16 +15,18 @@ import { extractWavFromVideo } from "@/lib/audio";
 import { ACCEPTED_VIDEO_TYPES, creditsForDuration, MAX_AUDIO_SECONDS, MAX_VIDEO_BYTES } from "@/lib/credits";
 import { walletQuery } from "@/lib/api/queries";
 import { transcribeAudioClient } from "@/lib/transcription/client-transcribe";
+import { compressVideoIfNeeded } from "@/lib/video-compressor";
 
 export const Route = createFileRoute("/_authenticated/upload")({
   head: () => pageMeta("Upload video", "Upload a private video up to five minutes for Telugu or English captions."),
   component: UploadPage,
 });
 
-type Stage = "idle" | "reading" | "uploading" | "transcribing";
+type Stage = "idle" | "reading" | "optimizing" | "uploading" | "transcribing";
 const STAGE_TEXT: Record<Stage, string> = {
   idle: "",
   reading: "Reading audio from your video...",
+  optimizing: "Optimizing video size for fast cloud upload...",
   uploading: "Uploading securely to cloud storage...",
   transcribing: "AI is writing your captions with word-level timing...",
 };
@@ -48,6 +50,7 @@ function UploadPage() {
   const [language, setLanguage] = useState<"te" | "mixed" | "en">("te");
   const [stage, setStage] = useState<Stage>("idle");
   const [progress, setProgress] = useState(0);
+  const [optimizingDetail, setOptimizingDetail] = useState("");
   const [dragOver, setDragOver] = useState(false);
 
   function pick(f: File | undefined) {
@@ -59,7 +62,7 @@ function UploadPage() {
       return;
     }
     if (f.size > MAX_VIDEO_BYTES) {
-      toast.error("Video must be under 50 MB.");
+      toast.error("Video must be under 200 MB.");
       return;
     }
     const url = URL.createObjectURL(f);
@@ -87,20 +90,31 @@ function UploadPage() {
     if (!file || !duration || !title.trim()) return;
     try {
       setStage("reading");
-      setProgress(15);
+      setProgress(10);
       const { wav } = await extractWavFromVideo(file);
 
+      // 1. Optimize if over 45 MB to stay comfortably within free storage limit
+      let fileToUpload = file;
+      if (file.size > 45 * 1024 * 1024) {
+        setStage("optimizing");
+        setProgress(20);
+        fileToUpload = await compressVideoIfNeeded(file, (p) => {
+          setOptimizingDetail(`${p.originalSizeMb} MB ➔ ~28 MB`);
+          setProgress(Math.round(20 + (p.percent / 100) * 35));
+        });
+      }
+
       setStage("uploading");
-      setProgress(35);
+      setProgress(60);
       const id = crypto.randomUUID();
-      const ext = file.name.split(".").pop()?.toLowerCase() ?? "mp4";
+      const ext = fileToUpload.name.split(".").pop()?.toLowerCase() ?? "mp4";
       const videoPath = `${user.id}/${id}/video.${ext}`;
 
-      // 1. Upload video file directly to private Supabase Storage bucket
+      // 2. Upload video file directly to private Supabase Storage bucket
       const { error: uploadError } = await supabase.storage
         .from("videos")
-        .upload(videoPath, file, {
-          contentType: file.type || "video/mp4",
+        .upload(videoPath, fileToUpload, {
+          contentType: fileToUpload.type || "video/mp4",
           upsert: true,
         });
 
@@ -196,7 +210,7 @@ function UploadPage() {
 
   return (
     <div className="mx-auto max-w-2xl animate-fade-up">
-      <PageHeader title="Upload a video" subtitle="MP4, MOV, WebM or MKV • up to 50 MB • up to 5 minutes" />
+      <PageHeader title="Upload a video" subtitle="MP4, MOV, WebM or MKV • up to 200 MB • up to 5 minutes" />
 
       {!file ? (
         <button
@@ -289,6 +303,7 @@ function UploadPage() {
               <Progress value={progress} />
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> {STAGE_TEXT[stage]}
+                {stage === "optimizing" && optimizingDetail ? ` (${optimizingDetail})` : ""}
               </p>
             </div>
           )}

@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-CXCudH8Z.js";import{t}from"./record-table-BE1gBSl2.js";var n=e();function r(){return(0,n.jsx)(t,{section:`renders`})}export{r as component};
