@@ -52,12 +52,14 @@ function UploadPage() {
 
   function pick(f: File | undefined) {
     if (!f) return;
-    if (!ACCEPTED_VIDEO_TYPES.includes(f.type)) {
+    const ext = f.name.split(".").pop()?.toLowerCase();
+    const isAcceptedExt = ext && ["mp4", "mov", "webm", "mkv", "m4v"].includes(ext);
+    if (!ACCEPTED_VIDEO_TYPES.includes(f.type) && !isAcceptedExt) {
       toast.error("Please choose an MP4, MOV, WebM or MKV video.");
       return;
     }
     if (f.size > MAX_VIDEO_BYTES) {
-      toast.error("Video must be under 200 MB.");
+      toast.error("Video must be under 50 MB.");
       return;
     }
     const url = URL.createObjectURL(f);
@@ -93,16 +95,18 @@ function UploadPage() {
       const id = crypto.randomUUID();
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "mp4";
       const videoPath = `${user.id}/${id}/video.${ext}`;
-      const audioPath = `${user.id}/${id}/audio.wav`;
 
-      // 1. Upload files to private Supabase Storage bucket
-      const [v, a] = await Promise.all([
-        supabase.storage.from("videos").upload(videoPath, file, { contentType: file.type, upsert: true }),
-        supabase.storage.from("videos").upload(audioPath, wav, { contentType: "audio/wav", upsert: true }),
-      ]);
-      if (v.error || a.error) {
-        console.error("Storage upload error:", v.error || a.error);
-        throw new Error("Upload failed. Please try again.");
+      // 1. Upload video file directly to private Supabase Storage bucket
+      const { error: uploadError } = await supabase.storage
+        .from("videos")
+        .upload(videoPath, file, {
+          contentType: file.type || "video/mp4",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error("Storage upload error:", uploadError);
+        throw new Error(`Upload failed: ${uploadError.message || "Storage error"}`);
       }
 
       setProgress(55);
@@ -192,7 +196,7 @@ function UploadPage() {
 
   return (
     <div className="mx-auto max-w-2xl animate-fade-up">
-      <PageHeader title="Upload a video" subtitle="MP4, MOV, WebM or MKV • up to 200 MB • up to 5 minutes" />
+      <PageHeader title="Upload a video" subtitle="MP4, MOV, WebM or MKV • up to 50 MB • up to 5 minutes" />
 
       {!file ? (
         <button

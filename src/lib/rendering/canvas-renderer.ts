@@ -204,3 +204,4 @@ export function drawCaptionsOnCanvas(
 
   ctx.restore();
 }
+

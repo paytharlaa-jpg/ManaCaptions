@@ -1,1 +1,0 @@
-import{t as e}from"./auth-middleware-DjPU5Epn.js";import{S as t}from"./index-HISBm-ML.js";var n=t({type:`function`}).middleware([e]);export{n as t};
