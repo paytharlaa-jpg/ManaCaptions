@@ -1,10 +1,12 @@
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
+import { supabase } from "@/integrations/supabase/client";
 import type { CaptionStyle } from "@/lib/captions/style-schema";
 import type { TranscriptSegment } from "@/lib/captions/types";
 import { drawCaptionsOnCanvas } from "./canvas-renderer";
 
 export interface RenderOptions {
   videoUrl: string;
+  storagePath?: string | null;
   segments: TranscriptSegment[];
   style: CaptionStyle;
   duration: number;
@@ -47,15 +49,32 @@ function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
       return;
     }
 
+    let resolved = false;
     const timeout = setTimeout(() => {
-      video.removeEventListener("seeked", onSeeked);
-      resolve();
-    }, 500);
+      if (!resolved) {
+        resolved = true;
+        video.removeEventListener("seeked", onSeeked);
+        resolve();
+      }
+    }, 400);
 
     const onSeeked = () => {
-      clearTimeout(timeout);
-      video.removeEventListener("seeked", onSeeked);
-      resolve();
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        video.removeEventListener("seeked", onSeeked);
+        if ("requestVideoFrameCallback" in video) {
+          (
+            video as unknown as {
+              requestVideoFrameCallback: (cb: () => void) => number;
+            }
+          ).requestVideoFrameCallback(() => {
+            resolve();
+          });
+        } else {
+          resolve();
+        }
+      }
     };
 
     video.addEventListener("seeked", onSeeked);
@@ -63,7 +82,11 @@ function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
   });
 }
 
-async function getSupportedVideoCodec(width: number, height: number, bitrate: number): Promise<string | null> {
+async function getSupportedVideoCodec(
+  width: number,
+  height: number,
+  bitrate: number,
+): Promise<string | null> {
   if (typeof VideoEncoder === "undefined") return null;
   const candidates = [
     "avc1.4d002a", // Main Profile Level 4.2
@@ -112,6 +135,7 @@ async function getSupportedAudioCodec(sampleRate: number): Promise<string | null
  */
 async function renderWithWebCodecs({
   videoUrl,
+  storagePath,
   segments,
   style,
   duration,
@@ -119,10 +143,28 @@ async function renderWithWebCodecs({
   onProgress,
   signal,
 }: RenderOptions): Promise<{ blob: Blob; ext: string }> {
-  // 1. Pre-fetch video as a Blob to eliminate network streaming latency
-  const resp = await fetch(videoUrl);
-  if (!resp.ok) throw new Error(`Could not fetch video file: ${resp.statusText}`);
-  const videoBlob = await resp.blob();
+  // 1. Download video directly via Supabase SDK to eliminate CORS restrictions
+  let videoBlob: Blob | null = null;
+  if (storagePath) {
+    try {
+      const { data, error } = await supabase.storage
+        .from("videos")
+        .download(storagePath);
+      if (!error && data) {
+        videoBlob = data;
+      }
+    } catch (e) {
+      console.warn("Supabase storage direct download failed:", e);
+    }
+  }
+
+  // Fallback to direct fetch if storagePath is not available
+  if (!videoBlob) {
+    const resp = await fetch(videoUrl);
+    if (!resp.ok) throw new Error(`Could not fetch video file: ${resp.statusText}`);
+    videoBlob = await resp.blob();
+  }
+
   const arrayBuffer = await videoBlob.arrayBuffer();
 
   if (signal?.aborted) throw new Error("Export cancelled.");
@@ -132,7 +174,8 @@ async function renderWithWebCodecs({
   try {
     const AudioCtxClass =
       window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      (window as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext;
     const audioCtx = new AudioCtxClass();
     audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
     void audioCtx.close();
@@ -209,7 +252,7 @@ async function renderWithWebCodecs({
             }
           : undefined,
       fastStart: "in-memory",
-      firstTimestampBehavior: "strict",
+      firstTimestampBehavior: "offset",
     });
 
     // 5. Initialize WebCodecs VideoEncoder
@@ -449,7 +492,10 @@ async function renderWithMediaRecorderFallback(
           if (isTerminated || video.ended || signal?.aborted) return;
           ctx.drawImage(video, 0, 0, targetW, targetH);
           drawCaptionsOnCanvas(ctx, targetW, targetH, segments, video.currentTime, style);
-          onProgress(Math.min(99, Math.round((video.currentTime / totalDuration) * 100)), video.currentTime);
+          onProgress(
+            Math.min(99, Math.round((video.currentTime / totalDuration) * 100)),
+            video.currentTime,
+          );
           requestAnimationFrame(drawLoop);
         };
         requestAnimationFrame(drawLoop);
@@ -483,14 +529,7 @@ export async function renderVideoInBrowser(
 
   // Check if modern WebCodecs is available
   if (typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined") {
-    try {
-      return await renderWithWebCodecs(options);
-    } catch (err) {
-      if ((err as Error)?.message?.includes("cancelled")) {
-        throw err;
-      }
-      console.warn("WebCodecs export failed, falling back to MediaRecorder:", err);
-    }
+    return await renderWithWebCodecs(options);
   }
 
   // Fallback for browsers without WebCodecs

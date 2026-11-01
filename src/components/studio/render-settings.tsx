@@ -19,6 +19,7 @@ interface RenderSettingsProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   videoUrl: string | null;
+  storagePath?: string | null;
   title: string;
   segments: TranscriptSegment[];
   style: CaptionStyle;
@@ -29,6 +30,7 @@ export function RenderSettings({
   open,
   onOpenChange,
   videoUrl,
+  storagePath,
   title,
   segments,
   style,
@@ -67,6 +69,7 @@ export function RenderSettings({
     try {
       const { blob, ext } = await renderVideoInBrowser({
         videoUrl,
+        storagePath,
         segments,
         style,
         duration,

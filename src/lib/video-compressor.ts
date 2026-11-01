@@ -14,15 +14,32 @@ function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
       return;
     }
 
+    let resolved = false;
     const timeout = setTimeout(() => {
-      video.removeEventListener("seeked", onSeeked);
-      resolve();
-    }, 500);
+      if (!resolved) {
+        resolved = true;
+        video.removeEventListener("seeked", onSeeked);
+        resolve();
+      }
+    }, 400);
 
     const onSeeked = () => {
-      clearTimeout(timeout);
-      video.removeEventListener("seeked", onSeeked);
-      resolve();
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        video.removeEventListener("seeked", onSeeked);
+        if ("requestVideoFrameCallback" in video) {
+          (
+            video as unknown as {
+              requestVideoFrameCallback: (cb: () => void) => number;
+            }
+          ).requestVideoFrameCallback(() => {
+            resolve();
+          });
+        } else {
+          resolve();
+        }
+      }
     };
 
     video.addEventListener("seeked", onSeeked);
@@ -30,7 +47,11 @@ function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
   });
 }
 
-async function getSupportedVideoCodec(width: number, height: number, bitrate: number): Promise<string | null> {
+async function getSupportedVideoCodec(
+  width: number,
+  height: number,
+  bitrate: number,
+): Promise<string | null> {
   if (typeof VideoEncoder === "undefined") return null;
   const candidates = [
     "avc1.4d002a", // Main Profile Level 4.2
@@ -76,7 +97,7 @@ async function getSupportedAudioCodec(sampleRate: number): Promise<string | null
  * Checks if the video file exceeds Supabase's 45 MB safe limit.
  * If <= 45 MB, returns the original file untouched immediately.
  * If > 45 MB (up to 200 MB), uses deterministic WebCodecs + mp4-muxer
- * to produce a pristine, full-30fps, non-laggy ~25 MB MP4 video.
+ * to produce a pristine, full-30fps, non-laggy ~24 MB MP4 video.
  */
 export async function compressVideoIfNeeded(
   file: File,
@@ -85,28 +106,25 @@ export async function compressVideoIfNeeded(
 ): Promise<File> {
   const MAX_RAW_BYTES = 45 * 1024 * 1024; // 45 MB
 
-  // 1. If already under 45 MB, no optimization needed!
   if (file.size <= MAX_RAW_BYTES) {
     return file;
   }
 
   const originalSizeMb = Number((file.size / (1024 * 1024)).toFixed(1));
 
-  // Check if WebCodecs is available
   if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") {
-    // If browser doesn't have WebCodecs, return file as-is rather than ruining it with MediaRecorder
     return file;
   }
 
   const arrayBuffer = await file.arrayBuffer();
   if (signal?.aborted) throw new Error("Optimization cancelled.");
 
-  // Decode audio buffer for clean audio track muxing
   let audioBuffer: AudioBuffer | null = null;
   try {
     const AudioCtxClass =
       window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      (window as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext;
     const audioCtx = new AudioCtxClass();
     audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
     void audioCtx.close();
@@ -124,14 +142,14 @@ export async function compressVideoIfNeeded(
   try {
     await new Promise<void>((resolve, reject) => {
       video.onloadedmetadata = () => resolve();
-      video.onerror = () => reject(new Error("Could not read video metadata for compression"));
+      video.onerror = () =>
+        reject(new Error("Could not read video metadata for compression"));
     });
 
     const origW = video.videoWidth || 1080;
     const origH = video.videoHeight || 1920;
     const duration = video.duration || 1;
 
-    // Scale to max 1280px on long dimension to fit comfortably under 45MB while remaining super crisp
     let targetW = origW;
     let targetH = origH;
     const maxDim = 1280;
@@ -149,7 +167,6 @@ export async function compressVideoIfNeeded(
     targetW = targetW % 2 === 0 ? targetW : targetW + 1;
     targetH = targetH % 2 === 0 ? targetH : targetH + 1;
 
-    // Target ~24 MB to stay safely below 45 MB limit
     const targetBits = 24 * 1024 * 1024 * 8;
     const videoBitrate = Math.min(
       2_600_000,
@@ -158,7 +175,6 @@ export async function compressVideoIfNeeded(
 
     const videoCodec = await getSupportedVideoCodec(targetW, targetH, videoBitrate);
     if (!videoCodec) {
-      // If no supported codec, return original file
       return file;
     }
 
@@ -183,7 +199,7 @@ export async function compressVideoIfNeeded(
             }
           : undefined,
       fastStart: "in-memory",
-      firstTimestampBehavior: "strict",
+      firstTimestampBehavior: "offset",
     });
 
     const videoEncoder = new VideoEncoder({
@@ -199,7 +215,6 @@ export async function compressVideoIfNeeded(
       framerate: 30,
     });
 
-    // Encode audio if present
     if (audioCodec && audioBuffer) {
       const audioEncoder = new AudioEncoder({
         output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
@@ -249,7 +264,6 @@ export async function compressVideoIfNeeded(
       await audioEncoder.flush();
     }
 
-    // Render video frames deterministically (30.00 FPS CFR)
     const fps = 30;
     const totalFrames = Math.max(1, Math.floor(duration * fps));
 

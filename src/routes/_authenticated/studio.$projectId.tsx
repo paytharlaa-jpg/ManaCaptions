@@ -253,6 +253,7 @@ function Studio() {
         open={renderOpen}
         onOpenChange={setRenderOpen}
         videoUrl={data.videoUrl}
+        storagePath={data.project.storage_path}
         title={data.project.title}
         segments={segments}
         style={style}
