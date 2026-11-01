@@ -228,7 +228,16 @@ function Studio() {
           </div>
         </div>
       </div>
-      <RenderSettings projectId={projectId} open={renderOpen} onOpenChange={setRenderOpen} />
+      <RenderSettings
+        projectId={projectId}
+        open={renderOpen}
+        onOpenChange={setRenderOpen}
+        videoUrl={data.videoUrl}
+        title={data.project.title}
+        segments={segments}
+        style={style}
+        duration={Number(data.project.duration_seconds || 0)}
+      />
     </div>
   );
 }
