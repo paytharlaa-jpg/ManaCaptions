@@ -116,7 +116,7 @@ function UploadPage() {
           title: title.trim(),
           language,
           storage_path: videoPath,
-          duration_seconds: duration,
+          duration_seconds: Number(duration.toFixed(2)),
           style_preset: "bold-pop",
         })
         .select("id")
@@ -129,13 +129,22 @@ function UploadPage() {
 
       // 3. Deduct / reserve credits atomically
       if (cost > 0) {
-        await supabase.rpc("apply_credit", {
-          _user_id: user.id,
+        const { error: rpcErr } = await supabase.rpc("spend_user_credit", {
           _kind: "reserve",
           _amount: -cost,
           _reference: project.id,
           _note: `Transcription (${cost} min)`,
         });
+        if (rpcErr) {
+          console.warn("spend_user_credit note:", rpcErr);
+          await supabase.rpc("apply_credit", {
+            _user_id: user.id,
+            _kind: "reserve",
+            _amount: -cost,
+            _reference: project.id,
+            _note: `Transcription (${cost} min)`,
+          });
+        }
       }
 
       setStage("transcribing");
