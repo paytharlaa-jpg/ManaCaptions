@@ -48,7 +48,7 @@ export async function renderVideoInBrowser({
   onProgress,
   signal,
 }: RenderOptions): Promise<{ blob: Blob; ext: string }> {
-  // Wait for Google fonts to be fully loaded
+  // Wait for Google fonts to be ready
   if (typeof document !== "undefined" && document.fonts) {
     try {
       await document.fonts.ready;
@@ -57,32 +57,58 @@ export async function renderVideoInBrowser({
     }
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     if (signal?.aborted) {
       reject(new Error("Export cancelled."));
       return;
+    }
+
+    let localBlobUrl: string | null = null;
+    let effectiveUrl = videoUrl;
+
+    // Pre-fetch video as a local blob if accessible to eliminate network buffering stutter
+    try {
+      const resp = await fetch(videoUrl);
+      if (resp.ok) {
+        const vBlob = await resp.blob();
+        localBlobUrl = URL.createObjectURL(vBlob);
+        effectiveUrl = localBlobUrl;
+      }
+    } catch {
+      // Fall back to direct videoUrl if fetch fails
     }
 
     const video = document.createElement("video");
     video.crossOrigin = "anonymous";
     video.playsInline = true;
     video.preload = "auto";
-    video.src = videoUrl;
+    video.src = effectiveUrl;
 
     const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d", { alpha: false });
+    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
     if (!ctx) {
+      if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
       reject(new Error("Could not initialize 2D canvas context."));
       return;
     }
 
     let audioCtx: AudioContext | null = null;
     let recorder: MediaRecorder | null = null;
-    let animationId = 0;
+    let rvfcId: number | null = null;
+    let rafId: number | null = null;
+    let isTerminated = false;
     const chunks: BlobPart[] = [];
 
     const cleanup = () => {
-      cancelAnimationFrame(animationId);
+      isTerminated = true;
+      if (rvfcId !== null && "cancelVideoFrameCallback" in video) {
+        (video as unknown as { cancelVideoFrameCallback: (id: number) => void }).cancelVideoFrameCallback(rvfcId);
+        rvfcId = null;
+      }
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
       if (video) {
         video.pause();
         video.removeAttribute("src");
@@ -90,6 +116,10 @@ export async function renderVideoInBrowser({
       }
       if (audioCtx && audioCtx.state !== "closed") {
         void audioCtx.close();
+      }
+      if (localBlobUrl) {
+        URL.revokeObjectURL(localBlobUrl);
+        localBlobUrl = null;
       }
     };
 
@@ -115,11 +145,9 @@ export async function renderVideoInBrowser({
 
         if (resolution === "1080p") {
           if (origH >= origW) {
-            // Vertical / square
             targetW = 1080;
             targetH = Math.round((1080 * origH) / origW);
           } else {
-            // Landscape
             targetH = 1080;
             targetW = Math.round((1080 * origW) / origH);
           }
@@ -133,7 +161,7 @@ export async function renderVideoInBrowser({
           }
         }
 
-        // Even dimensions for standard video encoders
+        // Even dimensions for hardware encoders
         targetW = targetW % 2 === 0 ? targetW : targetW + 1;
         targetH = targetH % 2 === 0 ? targetH : targetH + 1;
 
@@ -142,7 +170,8 @@ export async function renderVideoInBrowser({
 
         // Route audio through AudioContext to record without playing through speakers
         const AudioCtxClass =
-          window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         audioCtx = new AudioCtxClass();
         if (audioCtx.state === "suspended") {
           await audioCtx.resume();
@@ -159,11 +188,13 @@ export async function renderVideoInBrowser({
         }
 
         const { mimeType, ext } = getSupportedMimeType();
-        const bitrate = targetW >= 1080 ? 8_000_000 : 4_000_000;
+        // Optimal bitrates for fast stutter-free client-side hardware encoding
+        const videoBitrate = targetW >= 1080 ? 4_500_000 : 2_500_000;
 
         recorder = new MediaRecorder(canvasStream, {
           mimeType,
-          videoBitsPerSecond: bitrate,
+          videoBitsPerSecond: videoBitrate,
+          audioBitsPerSecond: 128_000,
         });
 
         recorder.ondataavailable = (e) => {
@@ -183,50 +214,75 @@ export async function renderVideoInBrowser({
           reject(new Error(`Recording error: ${String((e as unknown as { error?: Error }).error || e)}`));
         };
 
-        recorder.start(500); // chunk every 500ms
-
-        // Start playback and frame drawing loop
         const totalDuration = duration || video.duration || 1;
-        await video.play();
 
-        const renderFrame = () => {
-          if (video.ended || video.paused || signal?.aborted) {
-            return;
-          }
-
-          // 1. Draw current video frame
-          ctx.drawImage(video, 0, 0, targetW, targetH);
-
-          // 2. Draw active captions with styling
-          drawCaptionsOnCanvas(
-            ctx,
-            targetW,
-            targetH,
-            segments,
-            video.currentTime,
-            style,
-          );
-
-          // 3. Update progress
-          const pct = Math.min(
-            99,
-            Math.round((video.currentTime / totalDuration) * 100),
-          );
-          onProgress(pct, video.currentTime);
-
-          animationId = requestAnimationFrame(renderFrame);
-        };
-
-        animationId = requestAnimationFrame(renderFrame);
-
-        video.onended = () => {
+        const finishRecording = () => {
+          if (isTerminated) return;
+          isTerminated = true;
           onProgress(100, totalDuration);
-          cancelAnimationFrame(animationId);
           setTimeout(() => {
             if (recorder && recorder.state !== "inactive") {
               recorder.stop();
             }
           }, 300);
+        };
+
+        const drawFrame = () => {
+          if (isTerminated || signal?.aborted) return;
+
+          // Check if video reached end
+          if (video.ended || (video.currentTime >= totalDuration - 0.05 && totalDuration > 0)) {
+            finishRecording();
+            return;
+          }
+
+          // 1. Draw video frame
+          ctx.drawImage(video, 0, 0, targetW, targetH);
+
+          // 2. Draw active captions with styling
+          drawCaptionsOnCanvas(ctx, targetW, targetH, segments, video.currentTime, style);
+
+          // 3. Update progress
+          const pct = Math.min(99, Math.round((video.currentTime / totalDuration) * 100));
+          onProgress(pct, video.currentTime);
+        };
+
+        const scheduleFrame = () => {
+          if (isTerminated || video.ended || signal?.aborted) return;
+
+          if ("requestVideoFrameCallback" in video) {
+            rvfcId = (
+              video as unknown as {
+                requestVideoFrameCallback: (cb: () => void) => number;
+              }
+            ).requestVideoFrameCallback(() => {
+              drawFrame();
+              scheduleFrame();
+            });
+          } else {
+            rafId = requestAnimationFrame(() => {
+              drawFrame();
+              scheduleFrame();
+            });
+          }
+        };
+
+        // Reset to beginning before starting
+        video.currentTime = 0;
+        await new Promise<void>((r) => {
+          if (video.readyState >= 2) {
+            r();
+          } else {
+            video.oncanplay = () => r();
+          }
+        });
+
+        recorder.start(500); // chunk every 500ms
+        await video.play();
+        scheduleFrame();
+
+        video.onended = () => {
+          finishRecording();
         };
       } catch (err) {
         cleanup();
@@ -235,4 +291,3 @@ export async function renderVideoInBrowser({
     };
   });
 }
-

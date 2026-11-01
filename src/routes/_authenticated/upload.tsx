@@ -22,7 +22,6 @@ export const Route = createFileRoute("/_authenticated/upload")({
   component: UploadPage,
 });
 
-type Stage = "idle" | "reading" | "optimizing" | "uploading" | "transcribing";
 const STAGE_TEXT: Record<Stage, string> = {
   idle: "",
   reading: "Reading audio from your video...",
@@ -92,7 +91,6 @@ function UploadPage() {
       setStage("reading");
       setProgress(10);
       const { wav } = await extractWavFromVideo(file);
-
       // 1. Optimize if over 45 MB to stay comfortably within free storage limit
       let fileToUpload = file;
       if (file.size > 45 * 1024 * 1024) {
@@ -120,10 +118,8 @@ function UploadPage() {
 
       if (uploadError) {
         console.error("Storage upload error:", uploadError);
-        throw new Error(`Upload failed: ${uploadError.message || "Storage error"}`);
+        throw new Error(uploadError.message || "Failed to upload video to storage.");
       }
-
-      setProgress(55);
 
       // 2. Create the project directly in Supabase
       const { data: project, error: projError } = await supabase
@@ -226,9 +222,8 @@ function UploadPage() {
             setDragOver(false);
             pick(e.dataTransfer.files[0]);
           }}
-          className={`flex w-full flex-col items-center justify-center rounded-3xl border-2 border-dashed p-12 text-center transition-colors ${
-            dragOver ? "border-primary bg-accent" : "border-border bg-card hover:border-primary/50"
-          }`}
+          className={`flex w-full flex-col items-center justify-center rounded-3xl border-2 border-dashed p-12 text-center transition-colors ${dragOver ? "border-primary bg-accent" : "border-border bg-card hover:border-primary/50"
+            }`}
         >
           <span className="grid size-14 place-items-center rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
             <UploadCloud className="size-6" />
@@ -280,9 +275,8 @@ function UploadPage() {
                 <Label
                   key={l.v}
                   htmlFor={`lang-${l.v}`}
-                  className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 text-center text-sm ${
-                    language === l.v ? "border-primary bg-accent" : "border-border"
-                  }`}
+                  className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 text-center text-sm ${language === l.v ? "border-primary bg-accent" : "border-border"
+                    }`}
                 >
                   <RadioGroupItem id={`lang-${l.v}`} value={l.v} className="sr-only" />
                   {l.label}

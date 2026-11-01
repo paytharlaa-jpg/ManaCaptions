@@ -100,7 +100,7 @@ function Studio() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "llama-3.1-8b-instant",
+            model: "qwen/qwen3.8-27b",
             messages: [
               {
                 role: "system",
@@ -112,8 +112,28 @@ function Studio() {
             response_format: { type: "json_object" },
           }),
         });
+
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error?.message || `Transliteration failed (${res.status})`);
+        }
+
         const out = await res.json();
-        const transliterated: string[] = JSON.parse(out.choices[0].message.content).words || [];
+        if (!out.choices?.[0]?.message?.content) {
+          throw new Error("Could not parse transliterated text.");
+        }
+        const rawContent = (out.choices[0].message.content || "").trim();
+        const jsonText = rawContent
+          .replace(/^```json\s*/i, "")
+          .replace(/^```\s*/, "")
+          .replace(/\s*```$/, "")
+          .trim();
+        const parsed = JSON.parse(jsonText);
+        const transliterated: string[] = Array.isArray(parsed.words)
+          ? parsed.words
+          : Array.isArray(parsed)
+            ? parsed
+            : [];
         let i = 0;
         const romanized: TranscriptSegment[] = telugu.map((s) => {
           const ws = s.words.map((w) => ({ ...w, text: transliterated[i++] || w.text }));
