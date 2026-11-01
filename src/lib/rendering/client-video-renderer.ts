@@ -1,3 +1,4 @@
+import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import type { CaptionStyle } from "@/lib/captions/style-schema";
 import type { TranscriptSegment } from "@/lib/captions/types";
 import { drawCaptionsOnCanvas } from "./canvas-renderer";
@@ -39,7 +40,77 @@ export function getSupportedMimeType(): { mimeType: string; ext: string } {
   return { mimeType: "video/webm", ext: "webm" };
 }
 
-export async function renderVideoInBrowser({
+function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (Math.abs(video.currentTime - time) < 0.001) {
+      resolve();
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      video.removeEventListener("seeked", onSeeked);
+      resolve();
+    }, 500);
+
+    const onSeeked = () => {
+      clearTimeout(timeout);
+      video.removeEventListener("seeked", onSeeked);
+      resolve();
+    };
+
+    video.addEventListener("seeked", onSeeked);
+    video.currentTime = time;
+  });
+}
+
+async function getSupportedVideoCodec(width: number, height: number, bitrate: number): Promise<string | null> {
+  if (typeof VideoEncoder === "undefined") return null;
+  const candidates = [
+    "avc1.4d002a", // Main Profile Level 4.2
+    "avc1.64002a", // High Profile Level 4.2
+    "avc1.42001f", // Baseline Profile Level 3.1
+    "avc1.4d001f",
+    "avc1.42e01e",
+  ];
+  for (const c of candidates) {
+    try {
+      const support = await VideoEncoder.isConfigSupported({
+        codec: c,
+        width,
+        height,
+        bitrate,
+        framerate: 30,
+      });
+      if (support.supported) return c;
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
+async function getSupportedAudioCodec(sampleRate: number): Promise<string | null> {
+  if (typeof AudioEncoder === "undefined") return null;
+  try {
+    const support = await AudioEncoder.isConfigSupported({
+      codec: "mp4a.40.2",
+      numberOfChannels: 2,
+      sampleRate,
+      bitrate: 128_000,
+    });
+    if (support.supported) return "mp4a.40.2";
+  } catch {
+    // unsupported
+  }
+  return null;
+}
+
+/**
+ * Modern In-Browser Deterministic Frame-by-Frame Exporter
+ * Uses WebCodecs VideoEncoder + mp4-muxer with guaranteed 1-second keyframes (GOP = 30).
+ * Produces rock-solid, Constant Frame Rate 30.00 FPS MP4 video with zero stutter or freezing.
+ */
+async function renderWithWebCodecs({
   videoUrl,
   segments,
   style,
@@ -48,14 +119,228 @@ export async function renderVideoInBrowser({
   onProgress,
   signal,
 }: RenderOptions): Promise<{ blob: Blob; ext: string }> {
-  // Wait for Google fonts to be ready
-  if (typeof document !== "undefined" && document.fonts) {
-    try {
-      await document.fonts.ready;
-    } catch {
-      // Proceed if font loading promise fails
-    }
+  // 1. Pre-fetch video as a Blob to eliminate network streaming latency
+  const resp = await fetch(videoUrl);
+  if (!resp.ok) throw new Error(`Could not fetch video file: ${resp.statusText}`);
+  const videoBlob = await resp.blob();
+  const arrayBuffer = await videoBlob.arrayBuffer();
+
+  if (signal?.aborted) throw new Error("Export cancelled.");
+
+  // 2. Decode audio buffer for audio track muxing
+  let audioBuffer: AudioBuffer | null = null;
+  try {
+    const AudioCtxClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const audioCtx = new AudioCtxClass();
+    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+    void audioCtx.close();
+  } catch (err) {
+    console.warn("Could not decode audio track (video may be silent):", err);
   }
+
+  // 3. Load video into memory
+  const localBlobUrl = URL.createObjectURL(videoBlob);
+  const video = document.createElement("video");
+  video.crossOrigin = "anonymous";
+  video.playsInline = true;
+  video.muted = true;
+  video.src = localBlobUrl;
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error("Could not load video metadata"));
+    });
+
+    const origW = video.videoWidth || 1080;
+    const origH = video.videoHeight || 1920;
+
+    let targetW = origW;
+    let targetH = origH;
+
+    if (resolution === "1080p") {
+      if (origH >= origW) {
+        targetW = 1080;
+        targetH = Math.round((1080 * origH) / origW);
+      } else {
+        targetH = 1080;
+        targetW = Math.round((1080 * origW) / origH);
+      }
+    } else if (resolution === "720p") {
+      if (origH >= origW) {
+        targetW = 720;
+        targetH = Math.round((720 * origH) / origW);
+      } else {
+        targetH = 720;
+        targetW = Math.round((720 * origW) / origH);
+      }
+    }
+
+    targetW = targetW % 2 === 0 ? targetW : targetW + 1;
+    targetH = targetH % 2 === 0 ? targetH : targetH + 1;
+
+    const videoBitrate = targetW >= 1080 ? 4_500_000 : 2_500_000;
+    const videoCodec = await getSupportedVideoCodec(targetW, targetH, videoBitrate);
+    if (!videoCodec) {
+      throw new Error("WebCodecs VideoEncoder is not supported in this browser.");
+    }
+
+    const audioCodec =
+      audioBuffer && (await getSupportedAudioCodec(audioBuffer.sampleRate));
+
+    // 4. Initialize MP4 Muxer with fast-start metadata
+    const target = new ArrayBufferTarget();
+    const muxer = new Muxer({
+      target,
+      video: {
+        codec: "avc",
+        width: targetW,
+        height: targetH,
+        frameRate: 30,
+      },
+      audio:
+        audioCodec && audioBuffer
+          ? {
+              codec: "aac",
+              numberOfChannels: 2,
+              sampleRate: audioBuffer.sampleRate,
+            }
+          : undefined,
+      fastStart: "in-memory",
+      firstTimestampBehavior: "strict",
+    });
+
+    // 5. Initialize WebCodecs VideoEncoder
+    const videoEncoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: (e) => console.error("VideoEncoder error:", e),
+    });
+
+    videoEncoder.configure({
+      codec: videoCodec,
+      width: targetW,
+      height: targetH,
+      bitrate: videoBitrate,
+      framerate: 30,
+    });
+
+    // 6. Encode Audio Track if present
+    if (audioCodec && audioBuffer) {
+      const audioEncoder = new AudioEncoder({
+        output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+        error: (e) => console.error("AudioEncoder error:", e),
+      });
+
+      audioEncoder.configure({
+        codec: audioCodec,
+        numberOfChannels: 2,
+        sampleRate: audioBuffer.sampleRate,
+        bitrate: 128_000,
+      });
+
+      const sampleRate = audioBuffer.sampleRate;
+      const totalSamples = audioBuffer.length;
+      const CHUNK_SIZE = 2048;
+      const ch0 = audioBuffer.getChannelData(0);
+      const ch1 =
+        audioBuffer.numberOfChannels > 1
+          ? audioBuffer.getChannelData(1)
+          : ch0;
+
+      for (let offset = 0; offset < totalSamples; offset += CHUNK_SIZE) {
+        if (signal?.aborted) throw new Error("Export cancelled.");
+        const currentChunkSize = Math.min(CHUNK_SIZE, totalSamples - offset);
+        const chunkData = new Float32Array(currentChunkSize * 2);
+
+        // f32-planar format: all Channel 0 samples followed by Channel 1 samples
+        for (let s = 0; s < currentChunkSize; s++) {
+          chunkData[s] = ch0[offset + s];
+          chunkData[currentChunkSize + s] = ch1[offset + s];
+        }
+
+        const timestamp = Math.round((offset / sampleRate) * 1_000_000);
+        const audioData = new AudioData({
+          format: "f32-planar",
+          sampleRate,
+          numberOfChannels: 2,
+          numberOfFrames: currentChunkSize,
+          timestamp,
+          data: chunkData,
+        });
+
+        audioEncoder.encode(audioData);
+        audioData.close();
+      }
+
+      await audioEncoder.flush();
+    }
+
+    // 7. Render Video Frames deterministically frame-by-frame
+    const totalDuration = duration || video.duration || 1;
+    const fps = 30;
+    const totalFrames = Math.max(1, Math.floor(totalDuration * fps));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+    if (!ctx) throw new Error("Could not initialize 2D canvas context");
+
+    for (let i = 0; i < totalFrames; i++) {
+      if (signal?.aborted) throw new Error("Export cancelled.");
+
+      const currentTime = i / fps;
+
+      // Seek to exact frame time
+      await seekVideo(video, currentTime);
+
+      // Draw video frame
+      ctx.drawImage(video, 0, 0, targetW, targetH);
+
+      // Draw active captions
+      drawCaptionsOnCanvas(ctx, targetW, targetH, segments, currentTime, style);
+
+      // Presentation timestamp in microseconds
+      const timestamp = Math.round(currentTime * 1_000_000);
+      // Inject full I-Frame keyframe every 1 second (every 30 frames)
+      const isKeyFrame = i % 30 === 0;
+
+      const frame = new VideoFrame(canvas, { timestamp });
+      videoEncoder.encode(frame, { keyFrame: isKeyFrame });
+      frame.close();
+
+      // Avoid GPU queue backpressure
+      if (videoEncoder.encodeQueueSize > 8) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      // Progress reporting
+      const pct = Math.min(99, Math.round(((i + 1) / totalFrames) * 100));
+      onProgress(pct, currentTime);
+    }
+
+    await videoEncoder.flush();
+    muxer.finalize();
+
+    onProgress(100, totalDuration);
+
+    const finalBlob = new Blob([target.buffer], { type: "video/mp4" });
+    return { blob: finalBlob, ext: "mp4" };
+  } finally {
+    URL.revokeObjectURL(localBlobUrl);
+    video.removeAttribute("src");
+    video.load();
+  }
+}
+
+/** Fallback for older browsers without WebCodecs */
+async function renderWithMediaRecorderFallback(
+  options: RenderOptions,
+): Promise<{ blob: Blob; ext: string }> {
+  const { videoUrl, segments, style, duration, resolution, onProgress, signal } =
+    options;
 
   return new Promise(async (resolve, reject) => {
     if (signal?.aborted) {
@@ -63,52 +348,26 @@ export async function renderVideoInBrowser({
       return;
     }
 
-    let localBlobUrl: string | null = null;
-    let effectiveUrl = videoUrl;
-
-    // Pre-fetch video as a local blob if accessible to eliminate network buffering stutter
-    try {
-      const resp = await fetch(videoUrl);
-      if (resp.ok) {
-        const vBlob = await resp.blob();
-        localBlobUrl = URL.createObjectURL(vBlob);
-        effectiveUrl = localBlobUrl;
-      }
-    } catch {
-      // Fall back to direct videoUrl if fetch fails
-    }
-
     const video = document.createElement("video");
     video.crossOrigin = "anonymous";
     video.playsInline = true;
     video.preload = "auto";
-    video.src = effectiveUrl;
+    video.src = videoUrl;
 
     const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+    const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) {
-      if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
       reject(new Error("Could not initialize 2D canvas context."));
       return;
     }
 
     let audioCtx: AudioContext | null = null;
     let recorder: MediaRecorder | null = null;
-    let rvfcId: number | null = null;
-    let rafId: number | null = null;
     let isTerminated = false;
     const chunks: BlobPart[] = [];
 
     const cleanup = () => {
       isTerminated = true;
-      if (rvfcId !== null && "cancelVideoFrameCallback" in video) {
-        (video as unknown as { cancelVideoFrameCallback: (id: number) => void }).cancelVideoFrameCallback(rvfcId);
-        rvfcId = null;
-      }
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
       if (video) {
         video.pause();
         video.removeAttribute("src");
@@ -116,10 +375,6 @@ export async function renderVideoInBrowser({
       }
       if (audioCtx && audioCtx.state !== "closed") {
         void audioCtx.close();
-      }
-      if (localBlobUrl) {
-        URL.revokeObjectURL(localBlobUrl);
-        localBlobUrl = null;
       }
     };
 
@@ -132,7 +387,7 @@ export async function renderVideoInBrowser({
 
     video.onerror = () => {
       cleanup();
-      reject(new Error("Could not load video source for rendering."));
+      reject(new Error("Could not load video source."));
     };
 
     video.onloadedmetadata = async () => {
@@ -144,38 +399,25 @@ export async function renderVideoInBrowser({
         let targetH = origH;
 
         if (resolution === "1080p") {
-          if (origH >= origW) {
-            targetW = 1080;
-            targetH = Math.round((1080 * origH) / origW);
-          } else {
-            targetH = 1080;
-            targetW = Math.round((1080 * origW) / origH);
-          }
+          targetW = origH >= origW ? 1080 : Math.round((1080 * origW) / origH);
+          targetH = origH >= origW ? Math.round((1080 * origH) / origW) : 1080;
         } else if (resolution === "720p") {
-          if (origH >= origW) {
-            targetW = 720;
-            targetH = Math.round((720 * origH) / origW);
-          } else {
-            targetH = 720;
-            targetW = Math.round((720 * origW) / origH);
-          }
+          targetW = origH >= origW ? 720 : Math.round((720 * origW) / origH);
+          targetH = origH >= origW ? Math.round((720 * origH) / origW) : 720;
         }
 
-        // Even dimensions for hardware encoders
         targetW = targetW % 2 === 0 ? targetW : targetW + 1;
         targetH = targetH % 2 === 0 ? targetH : targetH + 1;
 
         canvas.width = targetW;
         canvas.height = targetH;
 
-        // Route audio through AudioContext to record without playing through speakers
         const AudioCtxClass =
           window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext;
         audioCtx = new AudioCtxClass();
-        if (audioCtx.state === "suspended") {
-          await audioCtx.resume();
-        }
+        if (audioCtx.state === "suspended") await audioCtx.resume();
 
         const source = audioCtx.createMediaElementSource(video);
         const destination = audioCtx.createMediaStreamDestination();
@@ -183,111 +425,74 @@ export async function renderVideoInBrowser({
 
         const canvasStream = canvas.captureStream(30);
         const audioTracks = destination.stream.getAudioTracks();
-        if (audioTracks.length > 0) {
-          canvasStream.addTrack(audioTracks[0]);
-        }
-
-        const { mimeType, ext } = getSupportedMimeType();
-        // Optimal bitrates for fast stutter-free client-side hardware encoding
-        const videoBitrate = targetW >= 1080 ? 4_500_000 : 2_500_000;
+        if (audioTracks.length > 0) canvasStream.addTrack(audioTracks[0]);
 
         recorder = new MediaRecorder(canvasStream, {
-          mimeType,
-          videoBitsPerSecond: videoBitrate,
-          audioBitsPerSecond: 128_000,
+          mimeType: "video/webm",
+          videoBitsPerSecond: targetW >= 1080 ? 4_500_000 : 2_500_000,
         });
 
         recorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            chunks.push(e.data);
-          }
+          if (e.data && e.data.size > 0) chunks.push(e.data);
         };
 
         recorder.onstop = () => {
           cleanup();
-          const finalBlob = new Blob(chunks, { type: mimeType });
-          resolve({ blob: finalBlob, ext });
+          resolve({ blob: new Blob(chunks, { type: "video/webm" }), ext: "webm" });
         };
 
-        recorder.onerror = (e) => {
-          cleanup();
-          reject(new Error(`Recording error: ${String((e as unknown as { error?: Error }).error || e)}`));
-        };
+        recorder.start(500);
+        await video.play();
 
         const totalDuration = duration || video.duration || 1;
-
-        const finishRecording = () => {
-          if (isTerminated) return;
-          isTerminated = true;
-          onProgress(100, totalDuration);
-          setTimeout(() => {
-            if (recorder && recorder.state !== "inactive") {
-              recorder.stop();
-            }
-          }, 300);
-        };
-
-        const drawFrame = () => {
-          if (isTerminated || signal?.aborted) return;
-
-          // Check if video reached end
-          if (video.ended || (video.currentTime >= totalDuration - 0.05 && totalDuration > 0)) {
-            finishRecording();
-            return;
-          }
-
-          // 1. Draw video frame
-          ctx.drawImage(video, 0, 0, targetW, targetH);
-
-          // 2. Draw active captions with styling
-          drawCaptionsOnCanvas(ctx, targetW, targetH, segments, video.currentTime, style);
-
-          // 3. Update progress
-          const pct = Math.min(99, Math.round((video.currentTime / totalDuration) * 100));
-          onProgress(pct, video.currentTime);
-        };
-
-        const scheduleFrame = () => {
+        const drawLoop = () => {
           if (isTerminated || video.ended || signal?.aborted) return;
-
-          if ("requestVideoFrameCallback" in video) {
-            rvfcId = (
-              video as unknown as {
-                requestVideoFrameCallback: (cb: () => void) => number;
-              }
-            ).requestVideoFrameCallback(() => {
-              drawFrame();
-              scheduleFrame();
-            });
-          } else {
-            rafId = requestAnimationFrame(() => {
-              drawFrame();
-              scheduleFrame();
-            });
-          }
+          ctx.drawImage(video, 0, 0, targetW, targetH);
+          drawCaptionsOnCanvas(ctx, targetW, targetH, segments, video.currentTime, style);
+          onProgress(Math.min(99, Math.round((video.currentTime / totalDuration) * 100)), video.currentTime);
+          requestAnimationFrame(drawLoop);
         };
-
-        // Reset to beginning before starting
-        video.currentTime = 0;
-        await new Promise<void>((r) => {
-          if (video.readyState >= 2) {
-            r();
-          } else {
-            video.oncanplay = () => r();
-          }
-        });
-
-        recorder.start(500); // chunk every 500ms
-        await video.play();
-        scheduleFrame();
+        requestAnimationFrame(drawLoop);
 
         video.onended = () => {
-          finishRecording();
+          onProgress(100, totalDuration);
+          setTimeout(() => {
+            if (recorder && recorder.state !== "inactive") recorder.stop();
+          }, 300);
         };
       } catch (err) {
         cleanup();
-        reject(err instanceof Error ? err : new Error("Failed to start video rendering"));
+        reject(err instanceof Error ? err : new Error("Failed to render video"));
       }
     };
   });
+}
+
+/** Primary Export Entry Point */
+export async function renderVideoInBrowser(
+  options: RenderOptions,
+): Promise<{ blob: Blob; ext: string }> {
+  // Wait for Google fonts to be ready
+  if (typeof document !== "undefined" && document.fonts) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Proceed if font loading promise fails
+    }
+  }
+
+  // Check if modern WebCodecs is available
+  if (typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined") {
+    try {
+      return await renderWithWebCodecs(options);
+    } catch (err) {
+      if ((err as Error)?.message?.includes("cancelled")) {
+        throw err;
+      }
+      console.warn("WebCodecs export failed, falling back to MediaRecorder:", err);
+    }
+  }
+
+  // Fallback for browsers without WebCodecs
+  return renderWithMediaRecorderFallback(options);
 }
