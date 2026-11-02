@@ -43,6 +43,7 @@ export function RenderSettings({
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [downloadFileName, setDownloadFileName] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [stageMessage, setStageMessage] = useState<string>("Rendering frames and synchronizing audio on your device...");
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -75,9 +76,10 @@ export function RenderSettings({
         duration,
         resolution,
         signal: controller.signal,
-        onProgress: (pct, sec) => {
+        onProgress: (pct, sec, msg) => {
           setProgress(pct);
           setCurrentSec(sec);
+          if (msg) setStageMessage(msg);
         },
       });
 
@@ -227,7 +229,8 @@ export function RenderSettings({
 
             <div className="space-y-1">
               <div className="text-2xl font-extrabold">{progress}%</div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs font-medium text-foreground/90">{stageMessage}</p>
+              <p className="text-[11px] text-muted-foreground">
                 Processed {formatClock(currentSec)} of {formatClock(duration)}
               </p>
             </div>

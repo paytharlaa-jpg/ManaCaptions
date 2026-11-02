@@ -22,6 +22,8 @@ export const Route = createFileRoute("/_authenticated/upload")({
   component: UploadPage,
 });
 
+type Stage = "idle" | "reading" | "optimizing" | "uploading" | "transcribing";
+
 const STAGE_TEXT: Record<Stage, string> = {
   idle: "",
   reading: "Reading audio from your video...",
@@ -91,40 +93,35 @@ function UploadPage() {
       setStage("reading");
       setProgress(10);
       const { wav } = await extractWavFromVideo(file);
-      // 1. Optimize if over 45 MB to stay comfortably within free storage limit
+
+      // Start AI transcription immediately in parallel with video upload!
+      // Groq Whisper only needs the audio wav, which is ready right now.
+      const transcribePromise = transcribeAudioClient({ wavBlob: wav, language });
+
+      // 1. Optimize video if over 48 MB to stay comfortably within free storage limit
       let fileToUpload = file;
-      if (file.size > 45 * 1024 * 1024) {
+      if (file.size > 48 * 1024 * 1024) {
         setStage("optimizing");
-        setProgress(20);
+        setProgress(25);
         fileToUpload = await compressVideoIfNeeded(file, (p) => {
           setOptimizingDetail(`${p.originalSizeMb} MB ➔ ~28 MB`);
-          setProgress(Math.round(20 + (p.percent / 100) * 35));
+          setProgress(Math.round(25 + (p.percent / 100) * 35));
         });
       }
 
       setStage("uploading");
-      setProgress(60);
+      setProgress(65);
       const id = crypto.randomUUID();
       const ext = fileToUpload.name.split(".").pop()?.toLowerCase() ?? "mp4";
       const videoPath = `${user.id}/${id}/video.${ext}`;
 
-      // 2. Upload video file directly to private Supabase Storage bucket
-      const { error: uploadError } = await supabase.storage
-        .from("videos")
-        .upload(videoPath, fileToUpload, {
+      // 2. Upload video file to private Supabase Storage bucket and create project in parallel
+      const [uploadRes, projectRes] = await Promise.all([
+        supabase.storage.from("videos").upload(videoPath, fileToUpload, {
           contentType: fileToUpload.type || "video/mp4",
           upsert: true,
-        });
-
-      if (uploadError) {
-        console.error("Storage upload error:", uploadError);
-        throw new Error(uploadError.message || "Failed to upload video to storage.");
-      }
-
-      // 2. Create the project directly in Supabase
-      const { data: project, error: projError } = await supabase
-        .from("projects")
-        .insert({
+        }),
+        supabase.from("projects").insert({
           id,
           user_id: user.id,
           title: title.trim(),
@@ -132,14 +129,19 @@ function UploadPage() {
           storage_path: videoPath,
           duration_seconds: Number(duration.toFixed(2)),
           style_preset: "bold-pop",
-        })
-        .select("id")
-        .single();
+        }).select("id").single(),
+      ]);
 
-      if (projError || !project) {
-        console.error("Project creation error:", projError);
-        throw new Error(projError?.message || "Could not create project.");
+      if (uploadRes.error) {
+        console.error("Storage upload error:", uploadRes.error);
+        throw new Error(uploadRes.error.message || "Failed to upload video to storage.");
       }
+
+      if (projectRes.error || !projectRes.data) {
+        console.error("Project creation error:", projectRes.error);
+        throw new Error(projectRes.error?.message || "Could not create project.");
+      }
+      const project = projectRes.data;
 
       // 3. Deduct / reserve credits atomically
       if (cost > 0) {
@@ -162,12 +164,12 @@ function UploadPage() {
       }
 
       setStage("transcribing");
-      setProgress(75);
+      setProgress(85);
 
-      // 4. Run AI speech recognition
-      const result = await transcribeAudioClient({ wavBlob: wav, language });
+      // 4. Await speech recognition (which was running concurrently!)
+      const result = await transcribePromise;
 
-      setProgress(90);
+      setProgress(95);
 
       // 5. Save the generated transcripts directly into Supabase
       const { error: transError } = await supabase.from("transcripts").upsert({
@@ -201,6 +203,7 @@ function UploadPage() {
       console.error("Submit error:", err);
       toast.error(err instanceof Error ? err.message : "Something went wrong during caption creation");
       setStage("idle");
+      setProgress(0);
     }
   }
 

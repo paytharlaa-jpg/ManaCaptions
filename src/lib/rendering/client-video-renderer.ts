@@ -11,7 +11,7 @@ export interface RenderOptions {
   style: CaptionStyle;
   duration: number;
   resolution: "original" | "1080p" | "720p";
-  onProgress: (percent: number, currentSec: number) => void;
+  onProgress: (percent: number, currentSec: number, stageMessage?: string) => void;
   signal?: AbortSignal;
 }
 
@@ -44,40 +44,39 @@ export function getSupportedMimeType(): { mimeType: string; ext: string } {
 
 function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
   return new Promise((resolve) => {
-    if (Math.abs(video.currentTime - time) < 0.001) {
+    if (Math.abs(video.currentTime - time) < 0.002) {
       resolve();
       return;
     }
 
     let resolved = false;
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        video.removeEventListener("seeked", onSeeked);
-        resolve();
-      }
-    }, 400);
-
-    const onSeeked = () => {
+    const finish = () => {
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
         video.removeEventListener("seeked", onSeeked);
-        if ("requestVideoFrameCallback" in video) {
-          (
-            video as unknown as {
-              requestVideoFrameCallback: (cb: () => void) => number;
-            }
-          ).requestVideoFrameCallback(() => {
-            resolve();
-          });
-        } else {
-          resolve();
-        }
+        resolve();
       }
     };
 
-    video.addEventListener("seeked", onSeeked);
+    // 1000ms safety ceiling: guarantees keyframe decoding is never cut off prematurely
+    const timeout = setTimeout(finish, 1000);
+
+    const onSeeked = () => {
+      if ("requestVideoFrameCallback" in video) {
+        (
+          video as unknown as {
+            requestVideoFrameCallback: (cb: () => void) => number;
+          }
+        ).requestVideoFrameCallback(() => {
+          finish();
+        });
+      } else {
+        finish();
+      }
+    };
+
+    video.addEventListener("seeked", onSeeked, { once: true });
     video.currentTime = time;
   });
 }
@@ -144,6 +143,7 @@ async function renderWithWebCodecs({
   signal,
 }: RenderOptions): Promise<{ blob: Blob; ext: string }> {
   // 1. Download video directly via Supabase SDK to eliminate CORS restrictions
+  onProgress(0, 0, "Downloading source video...");
   let videoBlob: Blob | null = null;
   if (storagePath) {
     try {
@@ -165,6 +165,7 @@ async function renderWithWebCodecs({
     videoBlob = await resp.blob();
   }
 
+  onProgress(5, 0, "Decoding audio track...");
   const arrayBuffer = await videoBlob.arrayBuffer();
 
   if (signal?.aborted) throw new Error("Export cancelled.");
@@ -190,6 +191,15 @@ async function renderWithWebCodecs({
   video.playsInline = true;
   video.muted = true;
   video.src = localBlobUrl;
+
+  // Attach offscreen to document body so Chromium allocates full GPU hardware decode acceleration
+  const offscreenHost = document.createElement("div");
+  offscreenHost.style.cssText =
+    "position:fixed;top:-9999px;left:-9999px;width:4px;height:4px;opacity:0.01;pointer-events:none;z-index:-9999;overflow:hidden;";
+  offscreenHost.appendChild(video);
+  if (typeof document !== "undefined" && document.body) {
+    document.body.appendChild(offscreenHost);
+  }
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -360,18 +370,22 @@ async function renderWithWebCodecs({
       }
 
       // Progress reporting
-      const pct = Math.min(99, Math.round(((i + 1) / totalFrames) * 100));
-      onProgress(pct, currentTime);
+      const pct = Math.min(96, Math.round(5 + ((i + 1) / totalFrames) * 91));
+      onProgress(pct, currentTime, "Burning subtitles & rendering frames...");
     }
 
+    onProgress(98, totalDuration, "Finalizing MP4 file...");
     await videoEncoder.flush();
     muxer.finalize();
 
-    onProgress(100, totalDuration);
+    onProgress(100, totalDuration, "Export complete!");
 
     const finalBlob = new Blob([target.buffer], { type: "video/mp4" });
     return { blob: finalBlob, ext: "mp4" };
   } finally {
+    if (offscreenHost.parentNode) {
+      offscreenHost.parentNode.removeChild(offscreenHost);
+    }
     URL.revokeObjectURL(localBlobUrl);
     video.removeAttribute("src");
     video.load();

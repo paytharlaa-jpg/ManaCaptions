@@ -9,40 +9,39 @@ export interface CompressProgress {
 
 function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
   return new Promise((resolve) => {
-    if (Math.abs(video.currentTime - time) < 0.001) {
+    if (Math.abs(video.currentTime - time) < 0.002) {
       resolve();
       return;
     }
 
     let resolved = false;
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        video.removeEventListener("seeked", onSeeked);
-        resolve();
-      }
-    }, 400);
-
-    const onSeeked = () => {
+    const finish = () => {
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
         video.removeEventListener("seeked", onSeeked);
-        if ("requestVideoFrameCallback" in video) {
-          (
-            video as unknown as {
-              requestVideoFrameCallback: (cb: () => void) => number;
-            }
-          ).requestVideoFrameCallback(() => {
-            resolve();
-          });
-        } else {
-          resolve();
-        }
+        resolve();
       }
     };
 
-    video.addEventListener("seeked", onSeeked);
+    // 800ms safety ceiling: prevents keyframe decode timeouts from dropping frames
+    const timeout = setTimeout(finish, 800);
+
+    const onSeeked = () => {
+      if ("requestVideoFrameCallback" in video) {
+        (
+          video as unknown as {
+            requestVideoFrameCallback: (cb: () => void) => number;
+          }
+        ).requestVideoFrameCallback(() => {
+          finish();
+        });
+      } else {
+        finish();
+      }
+    };
+
+    video.addEventListener("seeked", onSeeked, { once: true });
     video.currentTime = time;
   });
 }
@@ -104,7 +103,7 @@ export async function compressVideoIfNeeded(
   onProgress?: (p: CompressProgress) => void,
   signal?: AbortSignal,
 ): Promise<File> {
-  const MAX_RAW_BYTES = 45 * 1024 * 1024; // 45 MB
+  const MAX_RAW_BYTES = 48 * 1024 * 1024; // 48 MB
 
   if (file.size <= MAX_RAW_BYTES) {
     return file;
@@ -138,6 +137,15 @@ export async function compressVideoIfNeeded(
   video.playsInline = true;
   video.muted = true;
   video.src = objectUrl;
+
+  // Attach offscreen to document body so Chromium gives it full GPU decode acceleration
+  const offscreenHost = document.createElement("div");
+  offscreenHost.style.cssText =
+    "position:fixed;top:-9999px;left:-9999px;width:4px;height:4px;opacity:0.01;pointer-events:none;z-index:-9999;overflow:hidden;";
+  offscreenHost.appendChild(video);
+  if (typeof document !== "undefined" && document.body) {
+    document.body.appendChild(offscreenHost);
+  }
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -314,6 +322,9 @@ export async function compressVideoIfNeeded(
     const newName = file.name.replace(/\.[^.]+$/, ".mp4");
     return new File([target.buffer], newName, { type: "video/mp4" });
   } finally {
+    if (offscreenHost.parentNode) {
+      offscreenHost.parentNode.removeChild(offscreenHost);
+    }
     URL.revokeObjectURL(objectUrl);
     video.removeAttribute("src");
     video.load();
