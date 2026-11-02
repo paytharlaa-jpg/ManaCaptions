@@ -6,6 +6,7 @@ import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { lovable } from "@/integrations/lovable";
 import { useAuth } from "@/hooks/use-auth";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -22,19 +23,69 @@ export const Route = createFileRoute("/auth")({
 });
 
 function AuthPage() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
 
   useEffect(() => {
-    if (user) void navigate({ to: "/dashboard", replace: true });
-  }, [user, navigate]);
+    // 1. If user is already authenticated, forward to dashboard
+    if (user) {
+      void navigate({ to: "/dashboard", replace: true });
+      return;
+    }
+
+    // 2. Check for OAuth callback or errors in URL (both hash # and query ?)
+    if (typeof window !== "undefined") {
+      const search = window.location.search;
+      const hash = window.location.hash;
+
+      // Check for OAuth error returned by Google or Supabase
+      const params = new URLSearchParams(search || hash.replace(/^#/, "?"));
+      const errorDesc = params.get("error_description") || params.get("error");
+      if (errorDesc) {
+        console.error("Auth error:", errorDesc);
+        toast.error(`Sign in failed: ${decodeURIComponent(errorDesc.replace(/\+/g, " "))}`);
+        setBusy(false);
+        setAuthChecking(false);
+        return;
+      }
+
+      // Check if we arrived with a PKCE code or access_token
+      if (search.includes("code=") || hash.includes("access_token=")) {
+        setBusy(true);
+        supabase.auth.getSession().then(({ data, error }) => {
+          if (error) {
+            console.error("Session exchange error:", error);
+            toast.error(error.message || "Failed to complete sign in.");
+            setBusy(false);
+          } else if (data.session?.user) {
+            void navigate({ to: "/dashboard", replace: true });
+          }
+          setAuthChecking(false);
+        });
+        return;
+      }
+    }
+
+    if (!loading) {
+      setAuthChecking(false);
+    }
+  }, [user, loading, navigate]);
 
   async function signIn() {
     setBusy(true);
-    const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin + "/auth" });
-    if (result.error) {
-      toast.error("Sign in failed. Please try again.");
+    try {
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: `${window.location.origin}/auth`,
+      });
+      if (result.error) {
+        toast.error(result.error.message || "Sign in failed. Please try again.");
+        setBusy(false);
+      }
+    } catch (e) {
+      console.error("Sign in exception:", e);
+      toast.error(e instanceof Error ? e.message : "Sign in failed. Please try again.");
       setBusy(false);
     }
   }
@@ -45,9 +96,18 @@ function AuthPage() {
         <Logo />
         <h1 className="mt-8 text-2xl font-bold">Welcome, creator</h1>
         <p className="mt-2 text-sm text-muted-foreground">Sign in to get 10 free minutes of Telugu captions.</p>
-        <Button onClick={signIn} disabled={busy} variant="hero" size="lg" className="mt-8 w-full">
-          {busy ? <Loader2 className="animate-spin" /> : <GoogleIcon />} Continue with Google
-        </Button>
+        
+        {busy || (loading && authChecking) ? (
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 py-4 text-center">
+            <Loader2 className="size-8 animate-spin text-primary" />
+            <p className="text-sm font-medium text-muted-foreground">Signing you in...</p>
+          </div>
+        ) : (
+          <Button onClick={signIn} disabled={busy} variant="hero" size="lg" className="mt-8 w-full">
+            <GoogleIcon /> Continue with Google
+          </Button>
+        )}
+
         <p className="mt-6 text-xs text-muted-foreground">
           By continuing you agree to our <a href="/terms" className="underline">Terms</a> and{" "}
           <a href="/privacy" className="underline">Privacy Policy</a>.
